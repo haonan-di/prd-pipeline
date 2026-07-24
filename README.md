@@ -43,28 +43,31 @@ prd-pipeline 使用 **stdio 传输**（标准输入/输出）与 MCP 客户端�
 
 ### Hermes Desktop
 
-编辑 Hermes 配置文件 `config.yaml`（位于 `~/AppData/Local/hermes/config.yaml` 或用户目录下），在 `mcp_servers` 中添加：
+编辑 Hermes 配置文件 `config.yaml`（位于 `~/AppData/Local/hermes/config.yaml`），在 `mcp_servers` 中添加：
 
 ```yaml
 mcp_servers:
+  # ... 其他已有配置 ...
   prd-pipeline:
+    enabled: true
     command: npx
     args:
       - tsx
-      - C:\Users\你的用户名\prd-pipeline\src\index.ts   # 改为你的实际路径
+      - D:\path\to\prd-pipeline\src\index.ts    # 改为你的实际路径
 ```
 
-如果是自定义插件目录，也可以用：
+> ⚠️ `args` 中的路径必须使用 **绝对路径**。Windows 路径使用 `D:\` 格式（双反斜杠）。
+>
+> 💡 也可以用 `hermes config` CLI，但对 args 数组支持有限，推荐直接编辑 YAML：
+> ```bash
+> hermes config set mcp_servers.prd-pipeline.enabled true
+> hermes config set mcp_servers.prd-pipeline.command npx
+> # args 数组建议直接在 YAML 中编辑
+> ```
 
-```yaml
-mcp_servers:
-  prd-pipeline:
-    command: node
-    args:
-      - C:\Users\你的用户名\prd-pipeline\dist\index.js   # 先 npm run build
-```
+配置后重启 Hermes Desktop 即可生效。在聊天中测试：
 
-配置后重启 Hermes，在聊天中输入 `prd/workspace.status` 验证连接。
+> "调用 prd/workspace.status 检查 prd-pipeline 是否正常"
 
 ---
 
