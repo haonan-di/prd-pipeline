@@ -5,7 +5,7 @@ import { readConfig, writeConfig, isInitialized, createDefaultConfig } from "../
 
 export const WORKSPACE_INIT_TOOL = {
   name: "prd/workspace.init",
-  description: "Initialize PRD workspace with domain, soul, and template selection",
+  description: "Initialize PRD workspace with domain, soul, template, and document system configuration",
   inputSchema: {
     type: "object",
     properties: {
@@ -28,9 +28,14 @@ export const WORKSPACE_INIT_TOOL = {
         description: "Document system for publishing",
         default: "local",
       },
+      doc_mcp_server: {
+        type: "string",
+        description:
+          "MCP server name for document system access (e.g., 'wiki-mcp' for Confluence). Required if doc_system is not 'local'. This is the MCP server YOU have configured in your client that can interact with your company's document system.",
+      },
       space: {
         type: "string",
-        description: "Confluence/Feishu space key (required if doc_system is confluence or feishu)",
+        description: "Document space key (Confluence space key, Feishu folder, etc.)",
       },
     },
     required: ["domain", "soul"],
@@ -80,6 +85,7 @@ export function handleWorkspaceInit(args: Record<string, unknown>): {
       },
       document_system: {
         type: (args.doc_system as WorkspaceConfig["document_system"]["type"]) || "local",
+        mcp_server: args.doc_mcp_server as string | undefined,
         space: args.space as string | undefined,
       },
       search: {
@@ -112,6 +118,10 @@ export function handleWorkspaceInit(args: Record<string, unknown>): {
                 "Review soul persona in presets/souls/<soul>.md",
                 "Start discussion with prd/discuss.probe",
               ],
+              // 提示用户配置文档系统 MCP
+              ...(config.document_system.type !== "local" && !config.document_system.mcp_server
+                ? { warning: "doc_mcp_server not set. Document search and publish will not work until configured. Run prd/workspace.config to set it." }
+                : {}),
             },
             null,
             2

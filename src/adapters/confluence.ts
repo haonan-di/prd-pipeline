@@ -1,42 +1,56 @@
-/** Confluence 发布适配器 — 生成 Confluence Storage Format + wiki-mcp 指令 */
+/** Confluence 发布适配器 — 生成 Confluence Storage Format + 通用 MCP 指令 */
 
 import type { PublishAdapter, PublishMetadata, PublishResult } from "./base.js";
+import { readConfig } from "../config.js";
 import { encodeMermaidInkUrl } from "../diagram/ink.js";
 
 /**
  * Confluence 适配器
  *
- * 注意：此适配器不能直接调用 wiki-mcp MCP Server（MCP 服务器之间不能互相调用）。
- * 它负责：
- * 1. 将 PRD Markdown 转换为 Confluence Storage Format (HTML)
- * 2. 返回格式化后的内容和 wiki-mcp 指令，由 agent 执行实际发布
+ * 不绑定任何特定 MCP 服务器。使用 workspace 配置中的 doc_mcp_server 名称
+ * 来生成通用指令，由 agent 调用用户配置的文档系统 MCP 执行实际发布。
  */
 export class ConfluenceAdapter implements PublishAdapter {
   readonly type = "confluence" as const;
 
   async publish(metadata: PublishMetadata): Promise<PublishResult> {
     try {
+      const config = readConfig();
+      const mcpServerName = config?.document_system?.mcp_server || "your-document-mcp";
+
       const htmlBody = this.markdownToConfluenceHtml(metadata.content);
 
-      const instructions = {
-        action: metadata.parent_id ? "create_child" : "create_page",
-        space: metadata.space || "",
-        title: metadata.title,
-        parent_id: metadata.parent_id,
-        body: htmlBody,
-        wiki_mcp_commands: [
-          `1. Call mcp_wiki_mcp_get_connection_status() to verify connection`,
-          `2. Call mcp_wiki_mcp_get_page(pageId="${metadata.parent_id || ""}") to check parent page`,
-          metadata.parent_id
-            ? `3. Call mcp_wiki_mcp_create_page(space="${metadata.space}", title="${metadata.title}", parentId="${metadata.parent_id}", body=htmlBody)`
-            : `3. Call mcp_wiki_mcp_create_page(space="${metadata.space}", title="${metadata.title}", body=htmlBody)`,
-        ],
-      };
+      const pageTitle = metadata.title;
+      const space = metadata.space || config?.document_system?.space || "";
+      const parentId = metadata.parent_id;
+
+      // 生成通用 MCP 指令（不绑定任何特定 MCP 服务器）
+      let commands: string[];
+      if (parentId) {
+        // 迭代 PRD：创建子页面
+        commands = [
+          `1. Call ${mcpServerName} to verify connection (e.g., connection_status or equivalent)`,
+          `2. Call ${mcpServerName} to get parent page: parentId="${parentId}"`,
+          `3. Call ${mcpServerName} to create a CHILD page under parentId="${parentId}":`,
+          `   - space="${space}"`,
+          `   - title="${pageTitle}"`,
+          `   - body = the HTML content below (Confluence Storage Format)`,
+        ];
+      } else {
+        // 标准 PRD：创建新页面
+        commands = [
+          `1. Call ${mcpServerName} to verify connection`,
+          `2. Call ${mcpServerName} to create a page:`,
+          `   - space="${space}"`,
+          `   - title="${pageTitle}"`,
+          `   - body = the HTML content below (Confluence Storage Format)`,
+        ];
+      }
 
       return {
         success: true,
-        message: `Confluence publish prepared. Agent should execute wiki-mcp commands.`,
-        url: `[Confluence page will be created in space "${metadata.space}"]`,
+        message: `Confluence publish prepared. Your agent will use "${mcpServerName}" MCP server to create the page.`,
+        url: `[Page "${pageTitle}" ready for creation in space "${space}" via ${mcpServerName}]`,
       };
     } catch (error) {
       return {

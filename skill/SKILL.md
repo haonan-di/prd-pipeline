@@ -305,11 +305,13 @@ Call `prd/publish`:
 
 ### Step 5.2: For Confluence
 
-The publish tool returns prepared HTML and wiki-mcp instructions. Execute them:
+The publish tool returns prepared HTML and instructions referencing your configured MCP server (e.g., `wiki-mcp`, `feishu-mcp`). Execute them:
 
-1. Call `mcp_wiki_mcp_get_connection_status()` to verify connection
-2. Call `mcp_wiki_mcp_create_page()` with the HTML body
+1. Call your document MCP server to verify connection
+2. Call your document MCP server to create the page with the HTML body
 3. For iteration PRDs: use `parentId` to create as child page
+
+> **Note:** The MCP server name is set during `prd/workspace.init` via the `doc_mcp_server` parameter. If you didn't set it, run `prd/workspace.config` to update it.
 
 ### Step 5.3: Verify
 

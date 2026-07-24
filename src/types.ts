@@ -13,7 +13,9 @@ export interface WorkspaceConfig {
   };
   document_system: {
     type: DocSystemType;
-    /** Confluence space key */
+    /** MCP server name for document access (e.g., 'wiki-mcp', 'feishu-mcp') */
+    mcp_server?: string;
+    /** Document space key */
     space?: string;
     /** Confluence parent page ID for iteration PRDs */
     parent_page_id?: string;

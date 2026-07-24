@@ -147,15 +147,17 @@ export function handleContextSearch(
   }
 
   if (effectiveScope === "confluence") {
+    const config = readConfig();
+    const mcpName = config?.document_system?.mcp_server || "your-document-mcp";
     return {
       content: [
         {
           type: "text",
           text: JSON.stringify(
             {
-              message:
-                "Confluence search is available via the wiki-mcp MCP server. Use mcp_wiki_mcp_search with CQL query.",
-              hint: `CQL: text ~ "${query}" ORDER BY lastmodified DESC`,
+              message: `Confluence search is available via your configured "${mcpName}" MCP server. Use its search tool with a relevant query.`,
+              hint: `Example CQL: text ~ "${query}" ORDER BY lastmodified DESC`,
+              configured_mcp: mcpName,
               fallback: "Or switch to local search with scope='local'",
             },
             null,
