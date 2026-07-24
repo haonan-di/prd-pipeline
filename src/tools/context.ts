@@ -43,7 +43,9 @@ interface SearchResult {
 function searchLocal(query: string, limit: number, searchDir?: string): SearchResult[] {
   const results: SearchResult[] = [];
   // 优先使用配置的文档路径，兜底当前工作目录
-  const cwd = searchDir || process.cwd();
+  let cwd = searchDir || process.cwd();
+  // 标准化路径分隔符
+  cwd = cwd.replace(/\\/g, "/");
 
   if (!existsSync(cwd)) {
     return results;
@@ -51,23 +53,24 @@ function searchLocal(query: string, limit: number, searchDir?: string): SearchRe
 
   try {
     // 优先使用 ripgrep (rg)，更快
-    let hasRg = false;
+    let cmd: string;
     try {
-      execSync("which rg 2>/dev/null || where rg 2>nul", {
+      execSync("rg --version 2>nul || where rg 2>nul", {
         stdio: "ignore",
         timeout: 2000,
       });
-      hasRg = true;
+      cmd = `rg -l -i "${query.replace(/"/g, '\\"')}" --glob "*.md" "${cwd}" 2>nul`;
     } catch {
-      hasRg = false;
-    }
-
-    let cmd: string;
-    if (hasRg) {
-      cmd = `rg -l -i "${query.replace(/"/g, '\\"')}" --glob '*.md' "${cwd}" 2>/dev/null | head -${limit}`;
-    } else {
-      // Windows: findstr
-      cmd = `findstr /s /m /i /c:"${query}" "${cwd}\\*.md" 2>nul | head -${limit}`;
+      // 其次使用 grep (通过 bash -c，因为 grep 在 Git Bash 里)
+      try {
+        // 检查 grep 是否可用（通过 where 命令，在 Windows cmd 中有效）
+        execSync("where grep 2>nul", { stdio: "ignore", timeout: 2000 });
+        // 通过 bash -c 执行 grep，确保中文路径和字符正确处理
+        cmd = `bash -c "grep -r -l -i ${query} ${cwd} --include=*.md 2>/dev/null"`;
+      } catch {
+        // Windows 兜底：findstr（不支持中文，但保底）
+        cmd = `findstr /s /m /i /c:"${query}" "${cwd}\\*.md" 2>nul`;
+      }
     }
 
     const stdout = execSync(cmd, {
@@ -79,9 +82,10 @@ function searchLocal(query: string, limit: number, searchDir?: string): SearchRe
     const files = stdout
       .trim()
       .split("\n")
-      .filter(Boolean);
+      .filter(Boolean)
+      .slice(0, limit);
 
-    for (const file of files.slice(0, limit)) {
+    for (const file of files) {
       if (!existsSync(file)) continue;
 
       const content = readFileSync(file, "utf-8");
