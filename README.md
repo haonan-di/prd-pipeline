@@ -21,7 +21,7 @@ presets/                           ← 领域知识 + 角色人设 + 模板
 ## 安装
 
 ```bash
-git clone https://github.com/your-org/prd-pipeline
+git clone https://github.com/haonan-di/prd-pipeline
 cd prd-pipeline
 npm install
 ```
