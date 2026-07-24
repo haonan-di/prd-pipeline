@@ -4,3 +4,4 @@ dist/
 .env
 .env.local
 prd-config.yaml
+*.mjs
