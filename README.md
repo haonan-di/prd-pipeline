@@ -138,9 +138,57 @@ mcp_servers:
 
 ### Claude Code CLI
 
+Claude Code CLI 支持两种方式配置 MCP 服务器：
+
+**方式一：命令行添加（推荐）**
+
 ```bash
+# 在项目目录下执行
 claude mcp add prd-pipeline -- npx tsx /absolute/path/to/prd-pipeline/src/index.ts
 ```
+
+添加后可以在 `~/.claude/settings.json` 中看到已添加的配置。
+
+**方式二：手动编辑配置文件**
+
+编辑 `~/.claude/settings.json`：
+
+```json
+{
+  "mcpServers": {
+    "prd-pipeline": {
+      "command": "npx",
+      "args": [
+        "tsx",
+        "/absolute/path/to/prd-pipeline/src/index.ts"
+      ]
+    }
+  }
+}
+```
+
+**Windows 路径示例：**
+
+```bash
+# 命令行添加（Windows）
+claude mcp add prd-pipeline -- npx tsx D:\\prd-pipeline\\src\\index.ts
+
+# 或在 settings.json 中
+# "args": ["tsx", "D:\\prd-pipeline\\src\\index.ts"]
+```
+
+**验证：**
+```bash
+# 列出已配置的 MCP 服务器
+claude mcp list
+
+# 输出应包含 prd-pipeline
+```
+
+> 💡 添加后重启 Claude Code CLI 或重新打开会话。然后可以这样使用：
+> ```
+> /prd/workspace.status
+> ```
 
 ---
 
