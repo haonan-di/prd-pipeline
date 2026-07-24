@@ -15,8 +15,10 @@ export interface WorkspaceConfig {
     type: DocSystemType;
     /** MCP server name for document access (e.g., 'wiki-mcp', 'feishu-mcp') */
     mcp_server?: string;
-    /** Document space key */
+    /** Document space key (Confluence space, Feishu folder, etc.) */
     space?: string;
+    /** Local document directory path (e.g., Obsidian vault path) */
+    local_path?: string;
     /** Confluence parent page ID for iteration PRDs */
     parent_page_id?: string;
   };

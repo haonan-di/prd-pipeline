@@ -34,16 +34,28 @@ Call `prd/workspace.status` to see if the workspace is initialized.
 
 ### 0.2 Initialize (if needed)
 
-If not initialized, call `prd/workspace.init`:
+If not initialized, call `prd/workspace.init`. The agent should **ask the user** about each setting:
 
+1. **Domain** (领域): fintech, ecommerce, education, saas...
+2. **Soul** (角色人设): c-end-pm, b-end-pm, general-pm...
+3. **Document system** (文档系统):
+   - `local` → ask for **local document path** (e.g., Obsidian vault path)
+   - `confluence` → ask for **MCP server name** (e.g., `wiki-mcp`) and **space key**
+   - `feishu` → ask for **MCP server name** and **folder/app ID**
+4. **Template**: standard, iteration...
+
+Example call:
 ```json
 {
-  "domain": "fintech",       // or ecommerce, education, saas...
-  "soul": "c-end-pm",        // or b-end-pm, general-pm, risk-manager
-  "template": "standard",     // or iteration
-  "doc_system": "confluence"  // or local, feishu
+  "domain": "fintech",
+  "soul": "c-end-pm",
+  "doc_system": "local",
+  "local_path": "D:\\obsidian\\my_babel_tower_notes",
+  "template": "standard"
 }
 ```
+
+> ⚠️ **Always ask the user for document paths/MCP servers.** Never assume or hardcode.
 
 ### 0.3 Load Presets
 

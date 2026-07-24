@@ -39,10 +39,15 @@ interface SearchResult {
   source: string;
 }
 
-/** 本地搜索：使用 ripgrep 或 grep 搜索 MD 文件 */
-function searchLocal(query: string, limit: number): SearchResult[] {
+/** 本地搜索：使用 ripgrep 或 grep 搜索指定目录下的 MD 文件 */
+function searchLocal(query: string, limit: number, searchDir?: string): SearchResult[] {
   const results: SearchResult[] = [];
-  const cwd = process.cwd();
+  // 优先使用配置的文档路径，兜底当前工作目录
+  const cwd = searchDir || process.cwd();
+
+  if (!existsSync(cwd)) {
+    return results;
+  }
 
   try {
     // 优先使用 ripgrep (rg)，更快
@@ -135,12 +140,24 @@ export function handleContextSearch(
   }
 
   if (effectiveScope === "local") {
-    const results = searchLocal(query, limit);
+    const config = readConfig();
+    const searchDir = config?.document_system?.local_path;
+    const results = searchLocal(query, limit, searchDir);
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify({ query, scope: effectiveScope, total: results.length, results }, null, 2),
+          text: JSON.stringify(
+            {
+              query,
+              scope: effectiveScope,
+              search_path: searchDir || process.cwd(),
+              total: results.length,
+              results,
+            },
+            null,
+            2
+          ),
         },
       ],
     };

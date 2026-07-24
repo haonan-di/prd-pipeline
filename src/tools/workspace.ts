@@ -33,6 +33,11 @@ export const WORKSPACE_INIT_TOOL = {
         description:
           "MCP server name for document system access (e.g., 'wiki-mcp' for Confluence). Required if doc_system is not 'local'. This is the MCP server YOU have configured in your client that can interact with your company's document system.",
       },
+      local_path: {
+        type: "string",
+        description:
+          "Local document directory path. Required if doc_system is 'local'. E.g., your Obsidian vault path: D:\\obsidian\\my_babel_tower_notes",
+      },
       space: {
         type: "string",
         description: "Document space key (Confluence space key, Feishu folder, etc.)",
@@ -86,6 +91,7 @@ export function handleWorkspaceInit(args: Record<string, unknown>): {
       document_system: {
         type: (args.doc_system as WorkspaceConfig["document_system"]["type"]) || "local",
         mcp_server: args.doc_mcp_server as string | undefined,
+        local_path: args.local_path as string | undefined,
         space: args.space as string | undefined,
       },
       search: {
