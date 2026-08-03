@@ -36,7 +36,7 @@ export const WORKSPACE_INIT_TOOL = {
       local_path: {
         type: "string",
         description:
-          "Local document directory path. Required if doc_system is 'local'. E.g., your Obsidian vault path: D:\\obsidian\\my_babel_tower_notes",
+          "Local document directory path. Required if doc_system is 'local'. E.g., your Obsidian vault path.",
       },
       space: {
         type: "string",

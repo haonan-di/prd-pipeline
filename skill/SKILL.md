@@ -50,7 +50,7 @@ Example call:
   "domain": "fintech",
   "soul": "c-end-pm",
   "doc_system": "local",
-  "local_path": "D:\\obsidian\\my_babel_tower_notes",
+  "local_path": "/path/to/your/obsidian/vault",
   "template": "standard"
 }
 ```
