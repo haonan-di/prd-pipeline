@@ -16,6 +16,8 @@ export interface PublishResult {
   url?: string;
   page_id?: string;
   message: string;
+  /** Confluence Storage Format HTML (only set for confluence adapter) */
+  html_body?: string;
 }
 
 export interface PublishAdapter {

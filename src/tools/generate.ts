@@ -1,12 +1,15 @@
 /** PRD 撰写 — prd/generate */
 
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readConfig } from "../config.js";
 import { renderTemplate } from "../writer.js";
 import type { DiagramResult } from "../types.js";
 
-const PRESETS_DIR = join(import.meta.dirname, "..", "..", "presets");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PRESETS_DIR = join(__dirname, "..", "..", "presets");
 
 export const GENERATE_TOOL = {
   name: "prd/generate",
@@ -62,14 +65,6 @@ function loadTemplate(name: string): string | null {
   const templatePath = join(PRESETS_DIR, "templates", `${name}.md`);
   if (!existsSync(templatePath)) return null;
   return readFileSync(templatePath, "utf-8");
-}
-
-/** 生成 Confluence 兼容的流程图 HTML */
-function diagramToConfluenceHtml(mermaidCode: string, caption: string): string {
-  const { encodeMermaidInkUrl } = require("../diagram/ink.js");
-  const url = encodeMermaidInkUrl(mermaidCode);
-  return `<p><ac:image ac:width="600"><ri:url ri:value="${url}" /></ac:image></p>
-<p><span style="color: rgb(193,199,208);">${caption}</span></p>`;
 }
 
 export function handleGenerate(args: Record<string, unknown>): {

@@ -51,6 +51,8 @@ export class ConfluenceAdapter implements PublishAdapter {
         success: true,
         message: `Confluence publish prepared. Your agent will use "${mcpServerName}" MCP server to create the page.`,
         url: `[Page "${pageTitle}" ready for creation in space "${space}" via ${mcpServerName}]`,
+        html_body: htmlBody,
+        page_id: parentId,
       };
     } catch (error) {
       return {

@@ -28,7 +28,6 @@ export function encodeMermaidInkUrl(
 
 /** 简单流程：开始 → 判断 → 分支 */
 export function generateSimpleFlow(description: string): string {
-  // 从描述中提取步骤（按换行或句号分割）
   const steps = description
     .split(/[\n。；;]/)
     .map((s) => s.trim())
@@ -44,36 +43,31 @@ export function generateSimpleFlow(description: string): string {
   // 判断是否有分支逻辑
   const hasBranch = description.includes("判断") || description.includes("如果") || description.includes("if");
 
-  if (hasBranch && steps.length >= 3) {
-    // 生成带分支的流程图
+  if (hasBranch) {
+    // 有分支：第一步作为判断节点
     lines.push(`    ${labels[0]}{${steps[0]}}`);
-    let nodeIdx = 1;
-    let labelIdx = 1;
 
-    // 尝试识别分支
-    const branchMatch = description.match(/(判断|如果|if)\s*(.*?)[，,]\s*(是|true|通过)[：:：]?\s*(.*?)[，,]\s*(否|false|拒绝)[：:：]?\s*(.*)/i);
+    // 尝试识别 "如果 A，是/通过 → B，否/拒绝 → C" 模式
+    const branchMatch = description.match(
+      /(判断|如果|if)\s*(.*?)[，,]\s*(是|true|通过)[：:：]?\s*(.*?)[，,]\s*(否|false|拒绝)[：:：]?\s*(.*)/i
+    );
     if (branchMatch) {
       const yesAction = branchMatch[4].trim();
       const noAction = branchMatch[6].trim();
-      lines.push(`    ${labels[0]} -->|${branchMatch[3]}| ${labels[labelIdx]}[${yesAction}]`);
-      labelIdx++;
-      lines.push(`    ${labels[0]} -->|${branchMatch[5]}| ${labels[labelIdx]}[${noAction}]`);
+      lines.push(`    ${labels[0]} -->|${branchMatch[3]}| ${labels[1]}[${yesAction}]`);
+      lines.push(`    ${labels[0]} -->|${branchMatch[5]}| ${labels[2]}[${noAction}]`);
     } else {
-      // 简单线性流程
-      for (let i = 1; i < steps.length; i++) {
-        const currentLabel = labels[labelIdx] || `N${labelIdx}`;
-        lines.push(`    ${labels[labelIdx - 1]} --> ${currentLabel}[${steps[i]}]`);
-        labelIdx++;
+      // 无法解析分支结构，从第二步开始作为线性流程
+      for (let i = 1; i < Math.min(steps.length, labels.length); i++) {
+        lines.push(`    ${labels[i - 1]} --> ${labels[i]}[${steps[i]}]`);
       }
     }
   } else {
     // 线性流程图
-    for (let i = 0; i < steps.length; i++) {
-      const label = labels[i] || `N${i}`;
-      const shape = i === 0 ? `${label}[${steps[i]}]` : `${label}[${steps[i]}]`;
-      lines.push(`    ${label}[${steps[i]}]`);
+    for (let i = 0; i < Math.min(steps.length, labels.length); i++) {
+      lines.push(`    ${labels[i]}[${steps[i]}]`);
       if (i > 0) {
-        lines.push(`    ${labels[i - 1]} --> ${label}`);
+        lines.push(`    ${labels[i - 1]} --> ${labels[i]}`);
       }
     }
   }

@@ -1,10 +1,15 @@
 /** 模板管理 — prd/template.list, prd/template.get */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, basename, extname } from "node:path";
+import { join, basename, extname, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { PrdTemplate } from "../types.js";
 
-const TEMPLATES_DIR = join(import.meta.dirname, "..", "..", "presets", "templates");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// template.ts 在 src/tools/ 下，presets 在项目根目录
+const PRESETS_DIR = join(__dirname, "..", "..", "presets");
+const TEMPLATES_DIR = join(PRESETS_DIR, "templates");
 
 /** 模板元数据（从文件名推断） */
 const TEMPLATE_META: Record<string, { name: string; description: string }> = {

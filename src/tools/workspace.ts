@@ -58,10 +58,22 @@ export const WORKSPACE_STATUS_TOOL = {
 
 export const WORKSPACE_CONFIG_TOOL = {
   name: "prd/workspace.config",
-  description: "Update workspace configuration (search habits, spaces, etc.)",
+  description: "Update workspace configuration (document system, search habits, etc.)",
   inputSchema: {
     type: "object",
     properties: {
+      local_path: {
+        type: "string",
+        description: "Local document directory path (e.g., Obsidian vault path)",
+      },
+      doc_mcp_server: {
+        type: "string",
+        description: "MCP server name for document system access (e.g., 'wiki-mcp')",
+      },
+      space: {
+        type: "string",
+        description: "Document space key (Confluence space, Feishu folder, etc.)",
+      },
       recent_spaces: {
         type: "array",
         items: { type: "string" },
@@ -189,10 +201,19 @@ export function handleWorkspaceConfig(args: Record<string, unknown>): {
       };
     }
 
-    if (args.recent_spaces) {
+    if (args.local_path !== undefined) {
+      config.document_system.local_path = args.local_path as string;
+    }
+    if (args.doc_mcp_server !== undefined) {
+      config.document_system.mcp_server = args.doc_mcp_server as string;
+    }
+    if (args.space !== undefined) {
+      config.document_system.space = args.space as string;
+    }
+    if (args.recent_spaces !== undefined) {
       config.search.recent_spaces = args.recent_spaces as string[];
     }
-    if (args.recent_keywords) {
+    if (args.recent_keywords !== undefined) {
       config.search.recent_keywords = args.recent_keywords as string[];
     }
 

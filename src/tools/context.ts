@@ -1,7 +1,7 @@
 /** 上下文搜索 — prd/context.search */
 
-import { readFileSync, existsSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { readConfig } from "../config.js";
 
 export const CONTEXT_SEARCH_TOOL = {
@@ -39,57 +39,60 @@ interface SearchResult {
   source: string;
 }
 
-/** 本地搜索：使用 ripgrep 或 grep 搜索指定目录下的 MD 文件 */
+/** 递归收集目录下的所有 .md 文件 */
+function collectMdFiles(dir: string): string[] {
+  const results: string[] = [];
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        // 跳过隐藏目录和 node_modules
+        if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
+          results.push(...collectMdFiles(fullPath));
+        }
+      } else if (entry.name.endsWith(".md")) {
+        results.push(fullPath);
+      }
+    }
+  } catch {
+    // 跳过无权限的目录
+  }
+  return results;
+}
+
+/** 纯 Node.js 本地搜索 — 不依赖外部命令，无 shell 注入风险 */
 function searchLocal(query: string, limit: number, searchDir?: string): SearchResult[] {
   const results: SearchResult[] = [];
-  // 优先使用配置的文档路径，兜底当前工作目录
-  let cwd = searchDir || process.cwd();
-  // 标准化路径分隔符
-  cwd = cwd.replace(/\\/g, "/");
+  const cwd = searchDir || process.cwd();
 
   if (!existsSync(cwd)) {
     return results;
   }
 
+  const lowerQuery = query.toLowerCase();
+
   try {
-    // 优先使用 ripgrep (rg)，更快
-    let cmd: string;
-    try {
-      execSync("rg --version 2>nul || where rg 2>nul", {
-        stdio: "ignore",
-        timeout: 2000,
-      });
-      cmd = `rg -l -i "${query.replace(/"/g, '\\"')}" --glob "*.md" "${cwd}" 2>nul`;
-    } catch {
-      // 其次使用 grep (通过 bash -c，因为 grep 在 Git Bash 里)
+    const mdFiles = collectMdFiles(cwd);
+
+    for (const file of mdFiles) {
+      if (results.length >= limit) break;
+
+      let content: string;
       try {
-        // 检查 grep 是否可用（通过 where 命令，在 Windows cmd 中有效）
-        execSync("where grep 2>nul", { stdio: "ignore", timeout: 2000 });
-        // 通过 bash -c 执行 grep，确保中文路径和字符正确处理
-        cmd = `bash -c "grep -r -l -i ${query} ${cwd} --include=*.md 2>/dev/null"`;
+        content = readFileSync(file, "utf-8");
       } catch {
-        // Windows 兜底：findstr（不支持中文，但保底）
-        cmd = `findstr /s /m /i /c:"${query}" "${cwd}\\*.md" 2>nul`;
+        continue; // 跳过无法读取的文件
       }
-    }
 
-    const stdout = execSync(cmd, {
-      encoding: "utf-8",
-      timeout: 10000,
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-
-    const files = stdout
-      .trim()
-      .split("\n")
-      .filter(Boolean)
-      .slice(0, limit);
-
-    for (const file of files) {
-      if (!existsSync(file)) continue;
-
-      const content = readFileSync(file, "utf-8");
       const lines = content.split("\n");
+
+      // 检查是否匹配（大小写不敏感）
+      const matchIdx = lines.findIndex((l) =>
+        l.toLowerCase().includes(lowerQuery)
+      );
+
+      if (matchIdx === -1) continue;
 
       // 提取标题
       const titleLine = lines.find((l) => l.startsWith("# "));
@@ -98,9 +101,6 @@ function searchLocal(query: string, limit: number, searchDir?: string): SearchRe
         : file;
 
       // 提取匹配片段
-      const matchIdx = lines.findIndex((l) =>
-        l.toLowerCase().includes(query.toLowerCase())
-      );
       const snippetStart = Math.max(0, matchIdx - 1);
       const snippetEnd = Math.min(lines.length, matchIdx + 3);
       const snippet = lines
