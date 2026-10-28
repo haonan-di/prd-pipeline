@@ -1,111 +1,113 @@
-/** PRD 发布 — prd/publish */
+/**
+ * publish 工具（契约 §4 G）—— 本地交付 + 在线协同交接。
+ * 不内置任何平台连接器、不存凭证；在线发布由 agent 用用户声明的文档 MCP 执行。
+ */
 
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import { readConfig } from "../config.js";
-import { LocalAdapter } from "../adapters/local.js";
-import { ConfluenceAdapter } from "../adapters/confluence.js";
-import type { PublishMetadata } from "../adapters/base.js";
+import { uniqueFilePath } from "../task.js";
+import { assertHostPath, HostPathError } from "../paths.js";
+import { okResult, failResult } from "../envelope.js";
 
 export const PUBLISH_TOOL = {
   name: "prd/publish",
   description:
-    "Publish a PRD to the target document system. Supports local (markdown file) and confluence (via wiki-mcp). Uses workspace config to determine target system by default.",
+    "交付 PRD：local=写本地文件；在线系统=产出交接指引（由 agent 用用户文档 MCP 执行）。默认 local_first。",
   inputSchema: {
     type: "object",
     properties: {
-      content: {
-        type: "string",
-        description: "PRD content to publish",
-      },
-      title: {
-        type: "string",
-        description: "PRD title",
-      },
-      system: {
-        type: "string",
-        enum: ["auto", "local", "confluence"],
-        description:
-          "Target system. 'auto' uses the configured document system from workspace init.",
-        default: "auto",
-      },
-      parent_id: {
-        type: "string",
-        description:
-          "Parent page ID for iteration PRDs (Confluence only). Required for child pages.",
-      },
-      space: {
-        type: "string",
-        description:
-          "Confluence space key. Falls back to workspace config if omitted.",
-      },
-      version: {
-        type: "string",
-        description: "PRD version (used in filename for local publish)",
-      },
+      title: { type: "string" },
+      content: { type: "string", description: "PRD 正文（markdown）" },
+      version: { type: "string", default: "1.0" },
+      system: { type: "string", enum: ["local", "confluence", "feishu", "notion", "other"] },
     },
-    required: ["content", "title"],
+    required: ["title", "content"],
   },
 } as const;
 
-export async function handlePublish(
-  args: Record<string, unknown>
-): Promise<{ content: { type: string; text: string }[]; isError?: boolean }> {
+function prdFilename(title: string, version: string): string {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const safe = title
+    .replace(/[<>:"/\\|?*]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 50);
+  return `${date}-${safe}-v${version}.md`;
+}
+
+export function handlePublish(args: Record<string, unknown>) {
   try {
-    const content = args.content as string;
-    const title = args.title as string;
-    let system = (args.system as string) || "auto";
-    const parentId = args.parent_id as string | undefined;
-    const space = args.space as string | undefined;
-    const version = args.version as string | undefined;
-
-    // 确定目标系统
-    if (system === "auto") {
-      const config = readConfig();
-      system = config?.document_system?.type || "local";
+    const title = (args.title as string) ?? "";
+    const content = (args.content as string) ?? "";
+    if (title.trim() === "" || content.trim() === "") {
+      return failResult("INVALID_INPUT", "缺少 title 或 content");
     }
 
-    const metadata: PublishMetadata = {
-      title,
-      content,
-      parent_id: parentId,
-      space: space || readConfig()?.document_system?.space,
-      version,
-    };
+    const config = readConfig()?.config;
+    const ds = config?.document_system;
+    const version = (args.version as string) || "1.0";
+    const system = (args.system as string) || ds?.type || "local";
+    const mode = ds?.mode ?? "local_first";
 
-    let result;
-    switch (system) {
-      case "local":
-        result = await new LocalAdapter().publish(metadata);
-        break;
-      case "confluence":
-        result = await new ConfluenceAdapter().publish(metadata);
-        break;
-      default:
-        return {
-          content: [{ type: "text", text: `Unknown system: ${system}` }],
-          isError: true,
-        };
+    const out: Record<string, unknown> = { title, version, system, mode };
+
+    // 本地交付（local，或 local_first 的第一段）
+    if (system === "local" || mode === "local_first") {
+      const vault = ds?.local.vault_path ?? "";
+      if (vault === "") {
+        return failResult(
+          "INVALID_INPUT",
+          "未配置本地交付目录（document_system.local.vault_path）",
+          "运行 prd/workspace.init 指定 local_path"
+        );
+      }
+      try {
+        assertHostPath(vault, "document_system.local.vault_path");
+      } catch (error) {
+        if (error instanceof HostPathError) {
+          return failResult(
+            "INVALID_INPUT",
+            error.message,
+            "local_path 必须是运行 server 的机器上的有效路径"
+          );
+        }
+        throw error;
+      }
+      const dir = join(vault, ds?.local.subdir ?? "PRD");
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const file = uniqueFilePath(dir, prdFilename(title, version));
+      writeFileSync(file, content, "utf-8");
+      out.local = { path: file };
     }
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              system,
-              title,
-              result,
-            },
-            null,
-            2
-          ),
-        },
-      ],
-    };
+    // 在线协同交接（不真正发文档，交给 agent）
+    if (system !== "local") {
+      const mcp = ds?.remote.mcp_server || "(未声明)";
+      const space = ds?.remote.space || "(未配置)";
+      out.remote_handoff = {
+        platform: ds?.remote.platform ?? system,
+        mcp_server: mcp,
+        space,
+        parent_page_id: ds?.remote.parent_page_id ?? "",
+        content,
+        instructions: [
+          `调用用户声明的文档 MCP「${mcp}」创建/更新页面：`,
+          `- space=${space}`,
+          ds?.remote.parent_page_id
+            ? `- 作为子页面挂到 parent_page_id=${ds.remote.parent_page_id}`
+            : "- 新建页面",
+          `- 标题=${title}`,
+          "- 正文=上述 content；若目标平台不原生渲染 mermaid，先用 prd/diagram.build 出图再嵌入",
+        ],
+      };
+    }
+
+    out.message =
+      mode === "local_first"
+        ? "已落本地；用户确认后可同步至声明系统。"
+        : "已按 remote_first 生成交接指引。";
+    return okResult(out);
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error publishing PRD: ${error}` }],
-      isError: true,
-    };
+    return failResult("IO_ERROR", `交付失败：${String(error)}`);
   }
 }

@@ -1,227 +1,109 @@
-/** 图表生成 — prd/diagram.flowchart, prd/diagram.sequence */
+/**
+ * diagram 工具（契约 §4 E2 / §5）—— 引擎可插拔图表管道
+ * 取代旧的 diagram.flowchart / diagram.sequence（正则解析，已废弃）。
+ */
 
-import { generateSimpleFlow, encodeMermaidInkUrl } from "../diagram/ink.js";
-import type { DiagramResult } from "../types.js";
+import { readConfig } from "../config.js";
+import { discoverPresets, loadPresetFile } from "../presets/loader.js";
+import { EngineRegistry } from "../diagram/registry.js";
+import { EngineDecl, type EngineDeclT, type RenderStrategyT } from "../contracts/index.js";
+import { okResult, failResult } from "../envelope.js";
 
-export const DIAGRAM_FLOWCHART_TOOL = {
-  name: "prd/diagram.flowchart",
+export const DIAGRAM_BUILD_TOOL = {
+  name: "prd/diagram.build",
   description:
-    "Generate a flowchart diagram from a description. Returns Mermaid code + optional mermaid.ink URL for platforms that don't render Mermaid natively.",
+    "图表管道：校验图源码 → 按引擎与渲染策略产出交付物。默认引擎 mermaid。渲染策略受 config.diagram.render 约束。",
   inputSchema: {
     type: "object",
     properties: {
-      description: {
-        type: "string",
-        description: "Flow description — describe the process step by step",
-      },
-      format: {
-        type: "string",
-        enum: ["mermaid", "image", "both"],
-        description:
-          "Output format:\n- mermaid: return Mermaid code only (for Obsidian/GitHub)\n- image: return mermaid.ink URL only (for Confluence/Feishu)\n- both: return both",
-        default: "both",
+      code: { type: "string", description: "图源码（由 agent 按图表规范撰写）" },
+      engine: { type: "string", description: "引擎名，默认取 config.diagram.default_engine" },
+      strategy: { type: "string", enum: ["source", "local", "remote"] },
+      format: { type: "string", enum: ["svg", "img"], default: "svg" },
+      confirm_remote: {
+        type: "boolean",
+        description: "config.diagram.render=ask 时，选用 remote 必须显式确认（数据外发）",
       },
     },
-    required: ["description"],
+    required: ["code"],
   },
 } as const;
 
-export const DIAGRAM_SEQUENCE_TOOL = {
-  name: "prd/diagram.sequence",
-  description:
-    "Generate a sequence diagram from a description. Returns Mermaid code + optional mermaid.ink URL.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      description: {
-        type: "string",
-        description: "Interaction description — describe who interacts with whom and in what order",
-      },
-      participants: {
-        type: "array",
-        items: { type: "string" },
-        description: "List of participants/actors in the interaction",
-      },
-      format: {
-        type: "string",
-        enum: ["mermaid", "image", "both"],
-        default: "both",
-      },
-    },
-    required: ["description"],
-  },
-} as const;
-
-/** 从描述生成 sequence diagram mermaid 代码 */
-function generateSequenceMermaid(
-  description: string,
-  participants?: string[]
-): string {
-  const lines: string[] = ["sequenceDiagram"];
-
-  // 添加参与者
-  if (participants && participants.length > 0) {
-    for (const p of participants) {
-      lines.push(`    participant ${p}`);
+/** 从 presets/diagrams/*.md 收集声明式引擎 */
+function loadEngineDecls(presetDirs: string[]): EngineDeclT[] {
+  const decls: EngineDeclT[] = [];
+  for (const item of discoverPresets({ presetDirs }).filter((p) => p.type === "diagrams")) {
+    const parsed = loadPresetFile(item.path);
+    const engines = parsed?.frontmatter?.engines;
+    if (!Array.isArray(engines)) continue;
+    for (const e of engines) {
+      const r = EngineDecl.safeParse(e);
+      if (r.success) decls.push(r.data);
     }
   }
-
-  // 角色名匹配：中文 + 英文
-  const actor = "[\\u4e00-\\u9fff\\w]+";
-
-  // 从描述中解析交互步骤
-  const steps = description
-    .split(/[\n。；;]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  for (const step of steps) {
-    let matched = false;
-
-    // 1. "A 给/向 B 发送/返回/通知 xxx" — 最优先
-    let m = step.match(
-      new RegExp(`^(${actor})\\s*(给|向)\\s*(${actor})\\s*(发送|返回|展示|通知|传递|推送)\\s*(.*)$`)
-    );
-    if (m) {
-      const [, from, , to, verb, msg] = m;
-      const arrow = verb === "返回" ? "-->>" : "->>";
-      lines.push(`    ${from}${arrow}${to}: ${msg || verb}`);
-      continue;
-    }
-
-    // 2. "A 调用/请求 B 的 xxx" / "A 调用 B 接口"
-    m = step.match(
-      new RegExp(`^(${actor})\\s*(调用|请求)\\s*(${actor})\\s*[的]?\\s*(.*)$`)
-    );
-    if (m) {
-      const [, from, verb, to, action] = m;
-      lines.push(`    ${from}->>${to}: ${verb}${action ? ` ${action}` : ""}`);
-      continue;
-    }
-
-    // 3. "A 返回 xxx 给 B" / "A 返回 xxx"
-    m = step.match(
-      new RegExp(`^(${actor})\\s*(返回)\\s*(.*?)\\s*(给)\\s*(${actor})$`)
-    );
-    if (m) {
-      const [, from, , msg, , to] = m;
-      lines.push(`    ${from}-->>${to}: ${msg}`);
-      continue;
-    }
-    m = step.match(new RegExp(`^(${actor})\\s*(返回)\\s*(.*)$`));
-    if (m) {
-      const [, from, , msg] = m;
-      lines.push(`    ${from}-->>${from}: ${msg}`);
-      continue;
-    }
-
-    // 4. "A 展示/显示/提示/跳转 xxx" (单参与者)
-    m = step.match(
-      new RegExp(`^(${actor})\\s*(展示|显示|提示|跳转|进入|打开|关闭|弹出)\\s*(.*)$`)
-    );
-    if (m) {
-      const [, actor_name, action, target] = m;
-      lines.push(`    ${actor_name}->>${actor_name}: ${action}${target}`);
-      continue;
-    }
-
-    // 5. "A 发送/通知/传给 xxx" (接收方不明确)
-    m = step.match(new RegExp(`^(${actor})\\s*(发送|通知|传给|推送)\\s*(.*)$`));
-    if (m) {
-      const [, from, verb, msg] = m;
-      lines.push(`    ${from}->>System: ${verb}${msg ? ` ${msg}` : ""}`);
-      continue;
-    }
-
-    // 6. "A -> B: msg" 标准格式
-    m = step.match(
-      new RegExp(`^(${actor})\\s*(->|-->|-x|->>)\\s*(${actor})[：:：]?\\s*(.*)$`)
-    );
-    if (m) {
-      const [, from, arrow, to, msg] = m;
-      lines.push(`    ${from}${arrow}${to}: ${msg || "交互"}`);
-      continue;
-    }
-
-    // 7. 兜底：Note
-    lines.push(`    Note over all: ${step}`);
-  }
-
-  return lines.join("\n");
+  return decls;
 }
 
-function buildResult(
-  mermaidCode: string,
-  format: string
-): DiagramResult {
-  const result: DiagramResult = { mermaid: mermaidCode };
-
-  if (format === "image" || format === "both") {
-    try {
-      result.mermaid_ink_url = encodeMermaidInkUrl(mermaidCode, "svg");
-    } catch {
-      // 编码失败时只返回 code
-    }
+/** 按 config.diagram.render 策略与显式确认，决定实际渲染策略（契约 §5.3） */
+function resolveStrategy(
+  policy: RenderStrategyT,
+  requested: "source" | "local" | "remote" | undefined,
+  confirmRemote: boolean
+): { strategy: "source" | "local" | "remote"; denied?: string } {
+  if (policy === "source") return { strategy: "source" };
+  if (policy === "local") return { strategy: requested === "source" ? "source" : "local" };
+  if (policy === "remote") return { strategy: requested ?? "remote" };
+  // ask（默认）
+  const s = requested ?? "source";
+  if (s === "remote" && !confirmRemote) {
+    return { strategy: "source", denied: "策略为 ask：使用 remote（第三方外发）需 confirm_remote=true" };
   }
-
-  return result;
+  return { strategy: s };
 }
 
-export function handleDiagramFlowchart(args: Record<string, unknown>): {
-  content: { type: string; text: string }[];
-  isError?: boolean;
-} {
+export async function handleDiagramBuild(args: Record<string, unknown>) {
   try {
-    const description = args.description as string;
-    const format = (args.format as string) || "both";
+    const code = (args.code as string) ?? "";
+    if (code.trim() === "") return failResult("INVALID_INPUT", "缺少图源码 code");
 
-    if (!description || description.trim() === "") {
-      return {
-        content: [{ type: "text", text: "Description is required." }],
-        isError: true,
-      };
+    const config = readConfig()?.config;
+    const engineName =
+      (args.engine as string) || config?.diagram.default_engine || "mermaid";
+    const registry = new EngineRegistry(loadEngineDecls(config?.preset_dirs ?? []));
+    const engine = registry.get(engineName);
+    if (!engine) {
+      return failResult(
+        "DIAGRAM_ENGINE_UNKNOWN",
+        `未知引擎「${engineName}」`,
+        `可用引擎：${registry.names().join(", ")}`
+      );
     }
 
-    const mermaidCode = generateSimpleFlow(description);
-    const result = buildResult(mermaidCode, format);
-
-    return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-    };
-  } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error generating flowchart: ${error}` }],
-      isError: true,
-    };
-  }
-}
-
-export function handleDiagramSequence(args: Record<string, unknown>): {
-  content: { type: string; text: string }[];
-  isError?: boolean;
-} {
-  try {
-    const description = args.description as string;
-    const participants = args.participants as string[] | undefined;
-    const format = (args.format as string) || "both";
-
-    if (!description || description.trim() === "") {
-      return {
-        content: [{ type: "text", text: "Description is required." }],
-        isError: true,
-      };
+    const validation = engine.validate(code);
+    if (!validation.ok) {
+      return failResult("DIAGRAM_INVALID", `图源码校验失败：${validation.errors.join("；")}`);
     }
 
-    const mermaidCode = generateSequenceMermaid(description, participants);
-    const result = buildResult(mermaidCode, format);
+    const { strategy, denied } = resolveStrategy(
+      config?.diagram.render ?? "ask",
+      args.strategy as "source" | "local" | "remote" | undefined,
+      Boolean(args.confirm_remote)
+    );
+    if (denied) return failResult("RENDER_REMOTE_DENIED", denied, "或改用 strategy=source");
 
-    return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-    };
+    if (strategy === "local" && !engine.strategies.includes("local")) {
+      // 引擎不支持 local，降级为 source 并告警
+      const result = await engine.build(code, "source", { format: args.format });
+      return okResult({
+        ...result,
+        warnings: [...(result.warnings ?? []), `引擎 ${engineName} 暂不支持 local，已降级为 source`],
+        policy: config?.diagram.render ?? "ask",
+      });
+    }
+
+    const result = await engine.build(code, strategy, { format: args.format });
+    return okResult({ ...result, engine: engineName, policy: config?.diagram.render ?? "ask" });
   } catch (error) {
-    return {
-      content: [{ type: "text", text: `Error generating sequence diagram: ${error}` }],
-      isError: true,
-    };
+    return failResult("DIAGRAM_INVALID", `图表构建失败：${String(error)}`);
   }
 }

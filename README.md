@@ -1,299 +1,177 @@
 # prd-pipeline
 
-> **MCP Server** for Product Requirements Document (PRD) workflow — research, discuss, generate, and publish.
+> **AI 产品经理副手** —— 把 agent 编排成一个会做 PRD 的产品经理（方法论 + 可插拔的领域知识），并把整条链路串起来：**调研 → 结构化讨论 → 生成 → 审查 → 交付**。
 >
-> 让 AI agent 有能力执行完整的产品需求定义流程。
+> 开源、**中文优先**、**不绑定任何文档平台**。
+
+> **状态**：`v0.2.0`，核心链路已跑通并验证（`npm test` / `npm run smoke`）。需求以 [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) 为唯一源；实现契约见 [`docs/CONTRACTS.md`](docs/CONTRACTS.md)。
+
+---
+
+## 它是什么 / 不是什么
+
+**是**：一个 MCP server + 一份编排 skill + 一套可扩展的知识预设。核心价值是"**逼着 PM 把需求真正想清楚**"，而不是替你堆文档。
+
+**不是**：
+
+- **不是文档连接器** —— 不持有任何平台凭证、不实现平台 API；在线文档系统靠**协同**你已配置的文档 MCP（我们负责"知道你在用什么、产出标准产物、给出交接与检索策略"）。
+- **不是某个行业专用** —— fintech 只是内置的一个精样板，内核与领域解耦。
+- **不是模板填充器** —— 模板只是最后一公里，过程才是主体。
 
 ---
 
 ## 架构
 
 ```
-Agent (SKILL.md)                   ← 编排工作流
-    │
-prd-pipeline MCP Server            ← 11 个工具能力
-    │
-presets/                           ← 领域知识 + 角色人设 + 模板
+Agent 编排层   skill/SKILL.md   引导、讨论协议、审查协议、交付确认（无状态）
+确定性内核     MCP server       预设扫描 / 模板渲染 / 校验 / 状态落盘 / 图表管道 / 本地写文件
+知识层         presets/         领域 / 人设 / 模板 / 合规 / 阶段集 / 图表引擎（纯文件，可扩展可覆盖）
 ```
 
 ---
 
 ## 安装
 
-### 方式一：克隆仓库（推荐）
-
 ```bash
 git clone https://github.com/haonan-di/prd-pipeline.git
 cd prd-pipeline
 npm install
+npm run build      # 编译到 dist/
 ```
 
-### 方式二：npx 直接运行（无需克隆）
+## MCP 客户端配置
 
-> 即将支持，待发布到 npm。
+server 走 **stdio**。两种入口：
 
----
+- **编译后**：`node /你的路径/prd-pipeline/dist/index.js`（推荐）
+- **开发态**：`npx tsx /你的路径/prd-pipeline/src/index.ts`
 
-## 配置指南
+> `args` 中的路径必须是**绝对路径**。
 
-### 通用说明
+<details><summary><b>Claude Desktop</b></summary>
 
-prd-pipeline 使用 **stdio 传输** 与 MCP 客户端通信。配置时需要指定：
-
-- **command**: `npx`
-- **args**: `["tsx", "/你克隆的路径/prd-pipeline/src/index.ts"]`
-
-> ⚠️ `args` 中的路径必须使用 **绝对路径**。把 `/你克隆的路径/` 替换为你实际克隆的位置。
-
----
-
-### 各客户端配置
-
-<details>
-<summary><b>Hermes Desktop</b></summary>
-
-编辑 `config.yaml`（位于 `~/AppData/Local/hermes/config.yaml`），在 `mcp_servers` 中添加：
-
-```yaml
-mcp_servers:
-  prd-pipeline:
-    enabled: true
-    command: npx
-    args:
-      - tsx
-      - /你克隆的路径/prd-pipeline/src/index.ts
-```
-
-> 配置后重启 Hermes Desktop 即可生效。
-</details>
-
-<details>
-<summary><b>Claude Desktop</b></summary>
-
-编辑配置文件：
-
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+编辑 `%APPDATA%\Claude\claude_desktop_config.json`（macOS：`~/Library/Application Support/Claude/claude_desktop_config.json`）：
 
 ```json
 {
   "mcpServers": {
     "prd-pipeline": {
-      "command": "npx",
-      "args": ["tsx", "/你克隆的路径/prd-pipeline/src/index.ts"]
+      "command": "node",
+      "args": ["/你的路径/prd-pipeline/dist/index.js"]
     }
   }
 }
 ```
 </details>
 
-<details>
-<summary><b>Claude Code CLI</b></summary>
+<details><summary><b>Claude Code CLI</b></summary>
 
 ```bash
-# 方式一：命令行添加
-claude mcp add prd-pipeline -- npx tsx /你克隆的路径/prd-pipeline/src/index.ts
-
-# 方式二：编辑 ~/.claude/settings.json
-```
-
-验证：
-```bash
-claude mcp list
-# 输出应包含 prd-pipeline
+claude mcp add prd-pipeline -- node /你的路径/prd-pipeline/dist/index.js
+claude mcp list   # 应包含 prd-pipeline
 ```
 </details>
 
-<details>
-<summary><b>VS Code (Claude Extension)</b></summary>
+<details><summary><b>Cursor / VS Code</b></summary>
 
-在项目根目录创建 `.vscode/mcp.json`：
-
-```json
-{
-  "servers": {
-    "prd-pipeline": {
-      "command": "npx",
-      "args": ["tsx", "/你克隆的路径/prd-pipeline/src/index.ts"]
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><b>Cursor</b></summary>
-
-编辑 `~/.cursor/mcp.json`：
+Cursor 编辑 `~/.cursor/mcp.json`；VS Code 在项目内建 `.vscode/mcp.json`：
 
 ```json
 {
   "mcpServers": {
-    "prd-pipeline": {
-      "command": "npx",
-      "args": ["tsx", "/你克隆的路径/prd-pipeline/src/index.ts"]
-    }
+    "prd-pipeline": { "command": "node", "args": ["/你的路径/prd-pipeline/dist/index.js"] }
   }
 }
 ```
 </details>
 
----
-
-### 验证配置
-
-配置完成后，向你的 AI agent 提问：
-
-> "调用 prd/workspace.status 检查 prd-pipeline 是否正常"
-
-如果返回 `{"initialized": false}` 则连接成功。
+**验证连接**：让 agent 调 `prd/workspace.status`，返回 `{"ok":true,...}` 即连接成功。
 
 ---
 
 ## 快速开始
 
-### 第一步：初始化工作区
+1. **加载 skill**：把 `skill/SKILL.md` 交给你的 agent（或作为 skill 安装）。
+2. **发起任务**，例如：
 
-告诉 agent：
+   > 我要为「借款页综合融资成本明示优化」写 PRD
 
-> "初始化 prd-pipeline 工作区，领域 fintech，人设 c-end-pm，文档系统 local，本地路径 /我的文档目录"
+3. agent 会**静默自检**工作区，未初始化时**引导你**完成配置（文档系统**可跳过**），然后带你走完：
 
-agent 会调用 `prd/workspace.init` 完成配置，配置文件 `prd-config.yaml` 会自动生成在项目根目录。
+   ```
+   调研 → 讨论（问题→方案→取舍→合规→范围）→ 生成 → 审查 → 交付
+   ```
 
-### 第二步：搜索历史文档
-
-> "搜索关于 合规 的文档"
-
-agent 会调用 `prd/context.search` 搜索你配置的本地文档目录。
-
-### 第三步：结构化讨论
-
-agent 会按 5 阶段框架引导你讨论需求：
-
-```
-1. problem    — 问题定义
-2. solution   — 方案探讨
-3. tradeoff   — 取舍分析
-4. compliance — 合规审查
-5. scope      — 范围界定
-```
-
-### 第四步：生成 PRD
-
-讨论完成后，agent 会调用 `prd/generate` 生成 PRD 文档。
-
-### 第五步：发布
-
-```bash
-prd/publish(system="local")  → 写入本地文件
-prd/publish(system="confluence")  → 发布到 Confluence（需配置文档 MCP）
-```
+**产物**：每个需求一个文件夹 `<项目>/.prd/<slug>/`，内含 `state.yaml`（进度）、`discussion-<阶段>.md`（讨论结论）、`prd-v<版本>.md`（成品）、`assets/`。最终 PRD 落到你配置的本地目录或同步到在线系统。
 
 ---
 
-## 工具参考
+## 工具参考（14）
 
-### Workspace
+| 分组 | 工具 | 说明 |
+|------|------|------|
+| 工作区 | `prd/workspace.init` | 初始化/更新配置（文档系统可跳过） |
+| | `prd/workspace.status` | 静默自检：`ready` / `draft` / `uninitialized` |
+| | `prd/workspace.config` | 更新单项配置 |
+| 预设 | `prd/preset.list` | 列出六类预设（内置 + 自定义，标注来源） |
+| | `prd/preset.get` | 读取单个预设（同名跨类型需带 `type`） |
+| | `prd/preset.validate` | 校验自定义预设结构 |
+| 调研 | `prd/context.search` | 本地历史文档检索 |
+| 讨论 | `prd/discuss.stages` | 返回当前生效的阶段集 |
+| | `prd/discuss.probe` | 某阶段探针（含选项/推荐/理由；合规阶段叠加载入） |
+| | `prd/discuss.save` | 阶段结论落盘 + 进度推进 |
+| 生成 | `prd/diagram.build` | 图表管道（引擎可插拔 + 渲染策略） |
+| | `prd/generate` | 按模板渲染生成 PRD |
+| 审查 | `prd/review.check` | 确定性检查（占位符/空章节/修订记录/量化目标/图） |
+| 交付 | `prd/publish` | 本地交付 / 在线交接指引 |
 
-| 工具 | 说明 |
-|------|------|
-| `prd/workspace.init` | 初始化工作区：选领域、人设、文档系统、模板 |
-| `prd/workspace.status` | 查看当前配置 |
-| `prd/workspace.config` | 更新配置（文档路径、MCP 服务器等） |
-
-### Research
-
-| 工具 | 说明 |
-|------|------|
-| `prd/context.search` | 搜索历史文档（本地目录 / Confluence 提示） |
-
-### Discussion
-
-| 工具 | 说明 |
-|------|------|
-| `prd/discuss.probe` | 结构化讨论引导：5 阶段探针 |
-
-### Templates
-
-| 工具 | 说明 |
-|------|------|
-| `prd/template.list` | 列出可用模板 |
-| `prd/template.get` | 获取模板内容 |
-
-### Diagrams
-
-| 工具 | 说明 |
-|------|------|
-| `prd/diagram.flowchart` | 生成流程图（Mermaid + mermaid.ink URL） |
-| `prd/diagram.sequence` | 生成时序图（支持中文自然语言解析） |
-
-### Generation & Publishing
-
-| 工具 | 说明 |
-|------|------|
-| `prd/generate` | 从讨论结论 + 模板生成 PRD |
-| `prd/publish` | 发布到本地 / Confluence |
+所有工具返回统一信封：成功 `{"ok":true,"data":{…}}`，失败 `{"ok":false,"error":{"code","message","hint"}}`。
 
 ---
 
-## 预设内容
+## 预设（可扩展、可覆盖）
 
 ```
 presets/
-├── domains/
-│   ├── fintech.md        # 金融科技领域背景
-│   ├── ecommerce.md      # (建设中)
-│   └── education.md      # (建设中)
-├── souls/
-│   ├── c-end-pm.md       # C端产品经理
-│   ├── general-pm.md     # 通用产品经理
-│   ├── b-end-pm.md       # (建设中)
-│   └── risk-manager.md   # (建设中)
-└── templates/
-    ├── standard.md       # 标准 PRD 模板
-    └── iteration.md      # 迭代 PRD 模板
+├── domains/      领域知识（行业背景、术语、红线；可含领域探针）
+├── souls/        岗位人设（思维框架、方法论）
+├── templates/    PRD 模板（frontmatter 声明 placeholders）
+├── compliance/   合规审查依据源（按 产品形态 × 领域 × 辖区 组织，可增补公司条款）
+├── stages/       讨论阶段集（可替换流程；探针内联）
+└── diagrams/     图表引擎声明（声明式引擎，用户不写代码即可接入新工具）
 ```
 
-### 自定义预设
-
-你可以直接编辑 `presets/` 下的文件来适配你的领域和角色：
-
-- `presets/domains/` — 行业知识、监管要求、术语表
-- `presets/souls/` — 岗位人设、思考框架、方法论
-- `presets/templates/` — PRD 模板结构
+- 所有预设 = **Markdown + YAML frontmatter**，在编辑器里直接维护；
+- **默认领域 = `general`（通用，不绑定行业）**——需求不属于任何行业时就用它；属于某行业则选对应领域预设以加载其监管红线与术语；
+- 自定义目录加进 `config.preset_dirs`，**同名覆盖内置**，来源会标注；
+- 用 `prd/preset.validate` 自查结构，`prd/preset.list` 看实际可用项。
 
 ---
 
-## 完整工作流
-
-```
-Phase 0: 工作区初始化
-  prd/workspace.init → 读取 domain/soul presets
-
-Phase 1: 前期调研
-  prd/context.search → 阅读历史文档 → 总结调研结论
-
-Phase 2: 结构化讨论
-  prd/discuss.probe(problem → solution → tradeoff → compliance → scope)
-
-Phase 3: 生成 PRD
-  prd/template.get → prd/diagram.* → prd/generate → 用户 review
-
-Phase 4: 发布
-  prd/publish → (Confluence) 通过你的文档 MCP 创建页面
-```
-
-详细流程见 [`skill/SKILL.md`](skill/SKILL.md)。
-
----
-
-## 开发
+## 开发与验证
 
 ```bash
-npm run dev      # tsx 热启动（开发用）
-npm run build    # tsc 编译到 dist/
-npm start        # node 运行 dist/index.js
+npm run dev      # tsx 开发态
+npm run build    # 清 dist + tsc 编译
+npm test         # L1 契约 + L2 单元 + L3 集成（不需要联网）
+npm run smoke    # 构建后跑真实 stdio MCP 全链路
 ```
+
+两条都过，说明骨架是通的、且没被改坏。详见 [`docs/HOW-TO-VERIFY.md`](docs/HOW-TO-VERIFY.md)；产物样例见 [`examples/sample-prd.md`](examples/sample-prd.md)。
+
+---
+
+## 文档索引
+
+| 文件 | 作用 |
+|------|------|
+| [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | **唯一需求源**（定位、取舍、里程碑、验收） |
+| [`docs/CONTRACTS.md`](docs/CONTRACTS.md) | 实现契约（配置/预设/模板/图表/工具 I-O） |
+| [`skill/SKILL.md`](skill/SKILL.md) | agent 编排说明书 |
+| [`docs/HOW-TO-VERIFY.md`](docs/HOW-TO-VERIFY.md) | 怎么验证 |
+| [`docs/archive/`](docs/archive/) | 历史版本（v2.6 需求文档归档） |
+
+---
 
 ## License
 

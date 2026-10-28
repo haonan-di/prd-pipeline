@@ -1,3 +1,50 @@
+---
+name: fintech
+type: domain
+description: 金融科技领域知识 —— 业务模式、监管框架、术语、红线
+version: 1
+keywords:
+  - 借款
+  - 贷款
+  - 还款
+  - 利率
+  - 征信
+  - 风控
+  - 资方
+  - 放款
+  - 助贷
+  - 联合贷
+  - 分期
+  - 逾期
+  - 催收
+  - 授信
+  - 额度
+  - 复借
+  - 首借
+  - 回端
+  - 获客
+  - 电销
+probes:
+  - id: ft1
+    question: 年化利率（IRR）是否明示且不超过 24%？费用口径是否与费用中心一致？
+    allow_open: true
+    options:
+      - { label: 已明示且口径统一, value: ok, rationale: 合规底线 }
+      - { label: 未明示或口径不一致, value: risk, rationale: 触碰红线，发现即打断 }
+  - id: ft2
+    question: 征信查询/上报是否单独授权、未与借款协议捆绑？
+    allow_open: true
+    options:
+      - { label: 单独授权, value: separate, rationale: 必须 }
+      - { label: 与借款打包同意, value: bundled, rationale: 违规 }
+  - id: ft3
+    question: 资金路由/放款失败等场景是否有兜底与用户提示？
+    allow_open: true
+  - id: ft4
+    question: 用户敏感信息（身份证/银行卡）是否加密存储与传输？
+    allow_open: true
+---
+
 # Domain Context: Fintech (金融科技)
 
 > 行业背景知识库，供 PM 在需求定义过程中参考。此文件内容不绑定到具体产品逻辑，而是行业通用知识。

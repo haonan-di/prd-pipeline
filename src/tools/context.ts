@@ -1,206 +1,93 @@
-/** 上下文搜索 — prd/context.search */
+/**
+ * context 工具（契约 §4 C）—— 本地文档搜索
+ * 在线历史文档调研由 agent 借助用户声明的文档 MCP 完成（编排层）。
+ */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { readConfig } from "../config.js";
+import { resolveWorkspaceRoot } from "../task.js";
+import { okResult, failResult } from "../envelope.js";
 
 export const CONTEXT_SEARCH_TOOL = {
   name: "prd/context.search",
   description:
-    "Search historical PRDs, technical designs, and related documents. Supports local workspace search. For Confluence search, the agent should use the wiki-mcp search tool directly.",
+    "在本地目录检索历史文档（md）。在线历史文档调研请由 agent 调用用户声明的文档 MCP。",
   inputSchema: {
     type: "object",
     properties: {
-      query: {
-        type: "string",
-        description: "Search query — keywords, phrases, or topics to find",
-      },
-      scope: {
-        type: "string",
-        enum: ["local", "confluence", "auto"],
-        description:
-          "Search scope. 'auto' uses the configured document system. 'local' searches workspace files.",
-        default: "auto",
-      },
-      limit: {
-        type: "number",
-        description: "Maximum results to return",
-        default: 10,
-      },
+      query: { type: "string" },
+      scope: { type: "string", enum: ["local", "auto"], default: "auto" },
+      dir: { type: "string", description: "覆盖搜索目录（默认取 document_system.local.vault_path）" },
+      limit: { type: "number", default: 10 },
     },
     required: ["query"],
   },
 } as const;
 
-interface SearchResult {
+interface SearchHit {
   title: string;
   path: string;
   snippet: string;
-  source: string;
+  source: "local";
 }
 
-/** 递归收集目录下的所有 .md 文件 */
-function collectMdFiles(dir: string): string[] {
-  const results: string[] = [];
+function collectMdFiles(dir: string, acc: string[] = []): string[] {
   try {
-    const entries = readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
       if (entry.isDirectory()) {
-        // 跳过隐藏目录和 node_modules
         if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
-          results.push(...collectMdFiles(fullPath));
+          collectMdFiles(full, acc);
         }
       } else if (entry.name.endsWith(".md")) {
-        results.push(fullPath);
+        acc.push(full);
       }
     }
   } catch {
-    // 跳过无权限的目录
+    /* 跳过无权限目录 */
   }
-  return results;
+  return acc;
 }
 
-/** 纯 Node.js 本地搜索 — 不依赖外部命令，无 shell 注入风险 */
-function searchLocal(query: string, limit: number, searchDir?: string): SearchResult[] {
-  const results: SearchResult[] = [];
-  const cwd = searchDir || process.cwd();
+function searchLocal(query: string, limit: number, dir: string): SearchHit[] {
+  const hits: SearchHit[] = [];
+  if (!existsSync(dir)) return hits;
+  const needle = query.toLowerCase();
 
-  if (!existsSync(cwd)) {
-    return results;
-  }
-
-  const lowerQuery = query.toLowerCase();
-
-  try {
-    const mdFiles = collectMdFiles(cwd);
-
-    for (const file of mdFiles) {
-      if (results.length >= limit) break;
-
-      let content: string;
-      try {
-        content = readFileSync(file, "utf-8");
-      } catch {
-        continue; // 跳过无法读取的文件
-      }
-
-      const lines = content.split("\n");
-
-      // 检查是否匹配（大小写不敏感）
-      const matchIdx = lines.findIndex((l) =>
-        l.toLowerCase().includes(lowerQuery)
-      );
-
-      if (matchIdx === -1) continue;
-
-      // 提取标题
-      const titleLine = lines.find((l) => l.startsWith("# "));
-      const title = titleLine
-        ? titleLine.replace(/^# /, "").trim()
-        : file;
-
-      // 提取匹配片段
-      const snippetStart = Math.max(0, matchIdx - 1);
-      const snippetEnd = Math.min(lines.length, matchIdx + 3);
-      const snippet = lines
-        .slice(snippetStart, snippetEnd)
-        .join("\n")
-        .slice(0, 200);
-
-      results.push({
-        title,
-        path: file,
-        snippet: snippet || "(matched in filename)",
-        source: "local",
-      });
+  for (const file of collectMdFiles(dir)) {
+    if (hits.length >= limit) break;
+    let content: string;
+    try {
+      content = readFileSync(file, "utf-8");
+    } catch {
+      continue;
     }
-  } catch {
-    // 搜索失败时返回空结果
+    const lines = content.split("\n");
+    const idx = lines.findIndex((l) => l.toLowerCase().includes(needle));
+    if (idx === -1) continue;
+    const titleLine = lines.find((l) => l.startsWith("# "));
+    hits.push({
+      title: titleLine ? titleLine.replace(/^#\s+/, "").trim() : file,
+      path: file,
+      snippet: lines.slice(Math.max(0, idx - 1), idx + 3).join("\n").slice(0, 240),
+      source: "local",
+    });
   }
-
-  return results;
+  return hits;
 }
 
-export function handleContextSearch(
-  args: Record<string, unknown>
-): { content: { type: string; text: string }[]; isError?: boolean } {
-  const query = args.query as string;
-  const scope = (args.scope as string) || "auto";
-  const limit = (args.limit as number) || 10;
+export function handleContextSearch(args: Record<string, unknown>) {
+  const query = (args.query as string) ?? "";
+  if (query.trim() === "") return failResult("INVALID_INPUT", "缺少查询关键词 query");
 
-  if (!query || query.trim() === "") {
-    return {
-      content: [{ type: "text", text: "Search query is required." }],
-      isError: true,
-    };
-  }
+  const config = readConfig()?.config;
+  const limit = (args.limit as number) ?? 10;
+  const dir =
+    (args.dir as string) ||
+    config?.document_system.local.vault_path ||
+    resolveWorkspaceRoot(config?.workspace_root);
 
-  // 确定搜索范围
-  let effectiveScope = scope;
-  if (effectiveScope === "auto") {
-    const config = readConfig();
-    effectiveScope = config?.document_system?.type || "local";
-  }
-
-  if (effectiveScope === "local") {
-    const config = readConfig();
-    const searchDir = config?.document_system?.local_path;
-    const results = searchLocal(query, limit, searchDir);
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              query,
-              scope: effectiveScope,
-              search_path: searchDir || process.cwd(),
-              total: results.length,
-              results,
-            },
-            null,
-            2
-          ),
-        },
-      ],
-    };
-  }
-
-  if (effectiveScope === "confluence") {
-    const config = readConfig();
-    const mcpName = config?.document_system?.mcp_server || "your-document-mcp";
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(
-            {
-              message: `Confluence search is available via your configured "${mcpName}" MCP server. Use its search tool with a relevant query.`,
-              hint: `Example CQL: text ~ "${query}" ORDER BY lastmodified DESC`,
-              configured_mcp: mcpName,
-              fallback: "Or switch to local search with scope='local'",
-            },
-            null,
-            2
-          ),
-        },
-      ],
-    };
-  }
-
-  return {
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify({
-          query,
-          scope: effectiveScope,
-          total: 0,
-          results: [],
-          message: `Unknown scope: ${effectiveScope}. Use 'local' or 'confluence'.`,
-        }, null, 2),
-      },
-    ],
-  };
+  const results = searchLocal(query, limit, dir);
+  return okResult({ query, search_path: dir, total: results.length, results });
 }

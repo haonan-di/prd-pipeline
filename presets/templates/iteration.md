@@ -1,77 +1,68 @@
-# {需求名称} (v{版本号} 迭代)
-
-> 本文档是 {上一版本PRD标题} (v{上一版本号}) 的迭代版本，仅描述增量变更。
-
 ---
+name: iteration
+type: template
+description: 迭代 PRD 模板 —— 仅描述增量变更，关联父文档
+version: 1
+placeholders:
+  - { key: background, label: 变更动因, required: true }
+  - { key: changes, label: 本次变更范围, required: true }
+  - { key: detail, label: 变更详述, required: true }
+  - { key: grayscale, label: 灰度方案, required: false }
+  - { key: compliance, label: 合规/风险, required: false }
+  - { key: regression, label: 回归测试建议, required: false }
+---
+
+# {{title}} (v{{version}} 迭代)
+
+> 本文档为迭代版本，仅描述增量变更；完整流程参见父文档。
 
 ## PRD 修订记录
 
 | 版本 | 时间 | 修订内容 | 修订人 |
 |------|------|---------|--------|
-| v{版本号} | {日期} | {本次变更概述} | {PM} |
+{{changelog_table}}
 
 ---
 
-## 一、项目/需求背景
+## 一、变更动因
 
-### 变更动因
-
-{为什么需要迭代：合规要求/用户反馈/业务调整/技术优化}
-
-### 关联父文档
-
-{上一版本 PRD 链接}
+{{background}}
 
 ---
 
 ## 二、本次变更范围
 
-### 变更一览
-
-| 模块 | 变更类型 | 变更说明 |
-|------|---------|---------|
-| {模块名} | 新增/修改/删除 | {说明} |
-
-### 未变更部分
-
-{明确说明哪些能力保持不变，方便开发/测试聚焦}
+{{changes}}
 
 ---
 
 ## 三、变更详述
 
-{仅描述变更部分，完整流程参见父文档}
+{{detail}}
 
-### {变更点1}
-
-**变更前：** {旧行为描述}
-
-**变更后：** {新行为描述}
-
-**变更原因：** {为什么这样改}
-
-### 流程图（变更部分）
-
-```mermaid
-graph TD
-    A[原流程节点] --> B{变更的判断}
-    B -->|新增路径| C[新行为]
-```
+{{#grayscale}}
 
 ---
 
 ## 四、灰度方案
 
-{与父文档一致，如有变化单独说明}
+{{grayscale}}
+{{/grayscale}}
+
+{{#compliance}}
 
 ---
 
 ## 五、合规/风险
 
-{变更引入的新合规关注点，已覆盖的部分不重复}
+{{compliance}}
+{{/compliance}}
+
+{{#regression}}
 
 ---
 
 ## 六、回归测试建议
 
-{变更可能影响到的已有功能，需要回归测试的清单}
+{{regression}}
+{{/regression}}

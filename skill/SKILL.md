@@ -1,386 +1,278 @@
 ---
 name: prd-pipeline
-description: "Complete PRD (Product Requirements Document) workflow — research, discuss, generate, and publish. Uses the prd-pipeline MCP server tools."
-version: 1.0.0
+description: "完整 PRD 工作流编排 —— 调研、结构化讨论、生成、审查、交付。依赖 prd-pipeline MCP server。"
+version: 2.0.0
 author: prd-pipeline
 tags: [prd, product-management, documentation, workflow]
 ---
 
-# PRD Pipeline Workflow
+# PRD Pipeline 编排说明书
 
-> Load this skill when the user asks to create, discuss, iterate, or publish a PRD (产品需求文档).
->
-> **Prerequisite:** The `prd-pipeline` MCP server must be configured and running.
-
----
-
-## Overview
-
-This workflow guides you through a complete product requirements definition process:
-
-```
-Research → Discuss → Generate → Review → Publish
-```
-
-Each step maps to one or more `prd-pipeline` MCP tools. You orchestrate the flow; the tools do the work.
+> 当用户要求**创建 / 讨论 / 迭代 / 发布 PRD（产品需求文档）**时加载本技能。
+> **前提**：`prd-pipeline` MCP server 已配置并运行（stdio）。若工具不可用，先提示用户检查配置。
 
 ---
 
-## Phase 0: Workspace Setup
+## 0. 三条纲领（贯穿全程）
 
-### 0.1 Check Status
+1. **拷问式澄清**——不接受用户的第一版模糊表述。用带选项与推荐答案的探针，把需求逼到**可判定、可执行、可测试**。含糊回答（"都行""看情况"）必须追问一轮。讨论结束的标志是 **frontier 为空**（没有遗留的隐性假设），而不是问满了固定题数。
+2. **最小必要**——写进 PRD 的需求默认从简，MVP 之外的进"二期"。判断口径："**砍掉这条，目标还成立吗？**"成立就砍。
+3. **合规红线不裁剪**——红线不受"最小必要"约束，该披露的一条不能少。**发现合规红线或事实性错误：立即打断反馈**，不要等到审查阶段（否则后续方案会建立在违规设计上）。
 
-Call `prd/workspace.status` to see if the workspace is initialized.
+---
 
-### 0.2 Initialize (if needed)
+## 1. Phase 0 · 工作区与需求绑定
 
-If not initialized, call `prd/workspace.init`. The agent should **ask the user** about each setting:
+### 1.1 静默自检
 
-1. **Domain** (领域): fintech, ecommerce, education, saas...
-2. **Soul** (角色人设): c-end-pm, b-end-pm, general-pm...
-3. **Document system** (文档系统):
-   - `local` → ask for **local document path** (e.g., Obsidian vault path)
-   - `confluence` → ask for **MCP server name** (e.g., `wiki-mcp`) and **space key**
-   - `feishu` → ask for **MCP server name** and **folder/app ID**
-4. **Template**: standard, iteration...
+调 `prd/workspace.status`。**这是自检，不是对用户的提问**。
 
-Example call:
+- `ready` → 直接干活，不打扰用户；
+- `uninitialized` → 进入引导（1.2）；
+- `draft` → 说明缺什么，补齐后继续。
+
+### 1.2 引导式初始化（仅未初始化时）
+
+逐项问，**能跳过的就允许跳过**：
+
+1. **文档系统**（可跳过）：`local`（只落本地）/ 在线系统（Confluence/飞书/Notion…）。
+   - 选在线时，**只声明、不收集凭证**——问"你用哪个文档 MCP、空间/文件夹是什么"，因为发布和调研都靠它。
+   - 跳过 = 仅本地交付，产品依然可用。
+2. **预设**：调 `prd/preset.list` 把**实际可用**的领域/人设/模板/阶段集列给用户选（**不要凭记忆编造选项**）。
+   - **领域（domain）始终有值**：默认 `general`（通用，不绑定行业）。需求**不属于**任何行业时就用 `general`；若属于某行业（金融/医疗/教育…）则选对应领域预设，以加载该行业的监管红线与术语。**不要**因为"不确定"就选一个不相关的行业领域。
+   - 人设、模板按需选择；不确定就用默认（`general-pm` / `standard`）。
+3. **交付模式**：`local_first`（默认，先落本地→review→再同步）或 `remote_first`。
+
+调用 `prd/workspace.init` 写入配置：
+
 ```json
 {
   "domain": "fintech",
   "soul": "c-end-pm",
-  "doc_system": "local",
-  "local_path": "/path/to/your/obsidian/vault",
-  "template": "standard"
+  "doc_system": "confluence",
+  "remote_mcp_server": "用户的文档 MCP 名",
+  "remote_space": "FINT",
+  "local_path": "用户的 Obsidian vault 路径",
+  "workspace_root": "会话所在项目目录（由你依据当前工作目录决定）"
 }
 ```
 
-> ⚠️ **Always ask the user for document paths/MCP servers.** Never assume or hardcode.
+> **工作区根（`workspace_root`）**：默认由你按**会话的项目目录**派生后传入（如 `<项目>/.prd`）。两条注意：
+> - 若会话是从**用户主目录**（`C:\Users\xxx`、`~/`）或某个与需求无关的位置启动的，**不要**把工作区建在那里——**先问用户想把 `.prd` 放在哪**。
+> - `prd/workspace.init` 的返回里带 `workspace_root`，**读给用户确认**，让他清楚文件会落在哪。
 
-### 0.3 Load Presets
+### 1.3 需求绑定（"这次对话是哪个需求"）
 
-After init, read the relevant preset files to understand domain context and role persona:
+**一个需求一个文件夹** `<workspace_root>/<slug>/`。按序判定，**至多问一次**：
 
-- Domain: `presets/domains/<domain>.md` — industry knowledge, regulations, terminology
-- Soul: `presets/souls/<soul>.md` — thinking framework, methodology, collaboration style
+1. 会话工作目录**本身已是需求目录**（含 `state.yaml`）→ 直接用它；
+2. 对话里点名了需求 → 直接匹配或新建（**不问**）；
+3. 没点名，但项目下存在"活跃需求" → 提议续用（**一句确认**，如"继续 XX 的 PRD？"）；
+4. 仍不确定 → **列出该项目下的 slug + 一个「新建需求」选项**，让用户选一次。
 
-> **Important:** The domain context and soul persona define HOW you think and WHAT you know. Read them before starting discussion.
+> 用户开场就说明给谁写 → **零追问**。
 
----
+### 1.4 领域复检（任务开始时）
 
-## Phase 1: Research (前期调研)
+领域在 init 时选，但**需求是之后才说的**——所以任务开始时必须复检一次：
 
-> **Goal:** Gather context before discussing solutions. Don't jump to solutions.
+1. 调 `prd/domain.detect({ "text": "<用户的需求描述>" })`；
+2. 若返回了 `recommendation`，**把证据说给用户并问是否切换**（例："这个需求涉及借款、回端、征信，命中 fintech 领域关键词，要不要把领域从 general 切到 fintech？"）；
+3. 用户确认后，再调 `prd/workspace.init({ "domain": "fintech" })`。
 
-### Step 1.1: Search Historical Documents
-
-Call `prd/context.search` to find related PRDs, technical designs, and past discussions:
-
-```json
-{
-  "query": "[topic keywords]",
-  "scope": "auto",
-  "limit": 5
-}
-```
-
-Search for:
-- Previous PRDs on the same feature area
-- Technical design documents
-- Post-mortems / retrospectives
-- Compliance or regulatory documents
-
-### Step 1.2: Read Relevant Documents
-
-If search returns useful results, read the documents (using `read_file` or `mcp_wiki_mcp_get_page` for Confluence).
-
-### Step 1.3: Summarize Research Findings
-
-Present a summary to the user:
-- What already exists (don't reinvent)
-- What changed since the last version
-- Known constraints and past decisions
+> **绝不静默切换领域。** `general` 只是默认值，不是结论。
 
 ---
 
-## Phase 2: Structured Discussion (方案探讨)
+## 2. Phase 1 · 调研（先弄清历史，再谈方案）
 
-> **Goal:** Use the probe framework to guide the user through requirements definition.
->
-> **Flow:** problem → solution → tradeoff → compliance → scope
->
-> **Principle:** Ask, don't tell. Let the user arrive at conclusions through guided questions.
+### 2.1 本地历史
 
-### Step 2.1: Problem Definition (问题定义)
+调 `prd/context.search`（`{ "query": "关键词" }`）在配置的本地目录检索历史 md。
 
-Call `prd/discuss.probe` with `stage: "problem"`:
+### 2.2 在线历史（**声明了文档 MCP 时**）
 
-```json
-{ "stage": "problem" }
-```
+- 由**你**调用用户声明的文档 MCP 检索**需求文档 + 技术文档 + 历史 PRD**；
+- 检索策略由你产出：给关键词、时间范围、空间范围（Confluence 可用类 CQL：`text ~ "关键词" ORDER BY lastmodified DESC`）；
+- 综合成**带引用**的调研摘要。
 
-Use the returned questions to guide the conversation. Probe for:
-- Who is the real user? Scale?
-- What's the current workaround?
-- What happens if we don't do this?
-- Is there data to quantify the impact?
+### 2.3 外部资料
 
-**Summarize** the problem definition after discussion.
+竞品/行业实践用 web 检索（我们自己的工具**不做**联网检索）。内网禁外网时**跳过并告知用户**，不要假装查过。
 
-### Step 2.2: Solution Exploration (方案探讨)
+### 2.4 输出
 
-Call `prd/discuss.probe` with `stage: "solution"`:
-
-```json
-{ "stage": "solution" }
-```
-
-Guide the user to:
-- List all possible approaches (don't converge too early)
-- Compare pros and cons
-- Reference industry best practices
-- Define MVP scope
-
-### Step 2.3: Trade-off Analysis (取舍分析)
-
-Call `prd/discuss.probe` with `stage: "tradeoff"`:
-
-```json
-{ "stage": "tradeoff" }
-```
-
-Help the user evaluate:
-- What are we giving up?
-- Technical cost vs business value
-- Extensibility implications
-- Failure modes and rollback plans
-
-### Step 2.4: Compliance Review (合规审查)
-
-Call `prd/discuss.probe` with `stage: "compliance"`:
-
-```json
-{ "stage": "compliance" }
-```
-
-Check against:
-- Domain-specific regulations (from domain context)
-- Data privacy requirements
-- Security concerns
-- Approval processes needed
-
-> **For fintech:** Reference the domain context for specific regulations (金规, 个人信息保护法, etc.)
-
-### Step 2.5: Scope Definition (范围界定)
-
-Call `prd/discuss.probe` with `stage: "scope"`:
-
-```json
-{ "stage": "scope" }
-```
-
-Define:
-- MVP boundaries (what's in, what's out for v1)
-- Dependencies and prerequisites
-- Success criteria and metrics
-- Gray release / A/B test plan
-- Monitoring and reporting needs
-
-### After All Stages
-
-Present a **discussion summary** covering:
-- Problem statement
-- Selected solution (with rationale)
-- Key trade-offs made
-- Compliance items addressed
-- MVP scope and success metrics
-
-Get user confirmation before moving to generation.
+给用户一份调研摘要：**已有什么**（别重复造）、**自上次以来变了什么**、**已知约束与历史决策**。每条带来源。
 
 ---
 
-## Phase 3: Generate PRD (撰写 PRD)
+## 3. Phase 2 · 结构化讨论（核心）
 
-> **Goal:** Produce the PRD document from discussion output.
+### 3.1 取阶段集
 
-### Step 3.1: Select Template
+调 `prd/discuss.stages` 拿到当前生效的阶段集（默认：问题 → 方案 → 取舍 → 合规 → 范围）。阶段集由预设决定，**可被用户替换**——按它返回的顺序走，不要写死五阶段。
 
-Call `prd/template.list` to see available templates, then `prd/template.get` to load one:
+### 3.2 每阶段循环
 
-```json
-{ "name": "standard" }    // or "iteration" for iterative changes
+```
+调 prd/discuss.probe({ stage })        → 拿到该阶段探针（含 2–3 选项 + 推荐 + 理由）
+    ↓
+一次呈现该阶段的 frontier 问题包（一批，不是一题一挤）
+    ↓
+用户回答 → 含糊处追问一轮（不接受"同意同意"通过）
+    ↓
+调 prd/discuss.save({ stage, intent, constraints, decisions, assumptions, open_questions })
+    ↓
+进入下一阶段
 ```
 
-### Step 3.2: Generate Diagrams
+**要点**
 
-Call `prd/diagram.flowchart` or `prd/diagram.sequence` for each diagram needed:
+- 每条探针都**附了推荐答案与理由**：呈现时把推荐项也说出来，给用户一个"可以反对的东西"，比空白填空高效；
+- 后续问题依赖前面答案的，**等答案到位再进入下一批**；
+- **合规阶段**（`probe_ref: compliance`）的探针由工具**运行时叠加**「合规依据源 + 所选领域红线」——你拿到什么就问什么，不要自造合规问题；
+- 合规阶段涉及事实核查（法规红线），**保持开放追问，不要套选择题模板**；
+- 每阶段结束**必须** `prd/discuss.save` 落盘——它是 generate 的输入、审查的依据，也是跨会话续起的状态源。
+
+### 3.3 讨论收尾
+
+全部阶段走完且 frontier 为空后，汇总讨论日志（Intent / 约束 / 关键决策 / 遗留假设）交用户确认，**确认后才进入生成**。
+
+---
+
+## 4. Phase 3 · 生成 PRD
+
+### 4.1 选模板
+
+调 `prd/preset.get({ "name": "standard", "type": "template" })`。模板的 frontmatter 里声明了 `placeholders`（键 + 是否必填）——**这就是 `sections` 必须覆盖的键**。
+
+> 同名可跨类型（`standard` 既是模板名也是阶段集名），**取模板时必须带 `type: "template"`**。
+
+### 4.2 出图（**图源码由你撰写**）
+
+按内容选图型，**由你写 mermaid 源码**（工具只做校验与渲染，不做"自然语言转图"）：
+
+| 表达内容 | 图型 | 引擎 |
+|---------|------|------|
+| 业务流程 / 判断分支 | flowchart | mermaid（默认） |
+| 系统交互 / 时序 | sequence | mermaid |
+| 状态流转 | state | mermaid |
+| 方案对比 / 结构 | mindmap | mermaid |
+| 排期 | gantt | mermaid |
+
+调 `prd/diagram.build({ "code": "<mermaid源码>" })`。它返回源码 / 图片 URL（按渲染策略）。**图的落位**不在这里指定——在图嵌入 PRD 时（`prd/generate` 的 `diagrams[].placement`）指定。
+
+- **渲染策略**：默认 `source`（只出源码，**零外发**）；目标平台不原生渲染 mermaid 时，需图片才用 `remote`（mermaid.ink，**内容会外发第三方**）——`config.diagram.render=ask` 时**必须先取得用户逐图确认**，再带 `confirm_remote: true` 调用。涉密场景保持 `source`。
+- 图的**美观要求**：统一主题、单图节点数受控（超了就拆子图）、有标题、**连线要有语义（edge label）**。
+
+### 4.3 生成
+
+调 `prd/generate`：
 
 ```json
 {
-  "description": "[flow description from discussion]",
-  "format": "both"
-}
-```
-
-Returns:
-- `mermaid`: Mermaid code (for Obsidian/GitHub rendering)
-- `mermaid_ink_url`: Image URL (for Confluence/Feishu embedding)
-
-> **Platform rendering:**
-> - **Obsidian / GitHub:** Use ` ```mermaid ` code block — renders natively
-> - **Confluence:** Use `mermaid_ink_url` via `<ac:image><ri:url>` — mermaid.ink encodes via zlib+base64
-> - **Feishu:** Use `mermaid_ink_url` or download image and upload as attachment
-> - **Fallback:** If mermaid.ink is unreachable, tell the user to screenshot the rendered diagram
-
-### Step 3.3: Generate PRD
-
-Call `prd/generate` with the discussion content:
-
-```json
-{
-  "title": "[PRD title]",
+  "title": "需求名称",
   "template": "standard",
+  "version": "1.0",
+  "changelog": "初版",
+  "author": "修订人",
   "sections": {
-    "background": "[from Phase 1 + Phase 2.1]",
-    "objectives": "[from Phase 2.5 success criteria]",
-    "details": "[from Phase 2.2 solution details]",
-    "grayscale": "[from Phase 2.5 gray release plan]",
-    "compliance": "[from Phase 2.4 compliance review]"
+    "background": "…", "objectives": "…", "details": "…",
+    "compliance": "…", "grayscale": "…", "appendix": "…"
   },
-  "diagrams": [
-    {
-      "placement": "details",
-      "mermaid": "[mermaid code from Step 3.2]",
-      "caption": "[diagram title]"
-    }
-  ],
-  "version": "1.0"
+  "diagrams": [{ "placement": "details", "source": "graph TD…", "caption": "流程" }]
 }
 ```
 
-### Step 3.4: Present for Review
-
-Show the generated PRD to the user. Ask for feedback on:
-- Completeness (are all sections covered?)
-- Accuracy (does it match the discussion?)
-- Clarity (is the language clear enough for dev/design/test to understand?)
+- `sections` 的键**必须覆盖模板的 required 占位符**（可显式空串），否则报 `PLACEHOLDER_MISSING`；
+- 工具会在渲染后**检出残留占位符**（`PLACEHOLDER_UNRESOLVED`）——有残留就是内容没给全，别硬发。
 
 ---
 
-## Phase 4: Review & Iterate (评审与迭代)
+## 5. Phase 4 · 审查（发布前必过）
 
-> **Goal:** Refine the PRD based on stakeholder feedback.
+### 5.1 确定性检查
 
-### Step 4.1: Handle Review Feedback
+调 `prd/review.check({ "content": "<PRD正文>" })`，拿回问题清单：残留占位符 / 空章节 / 修订记录缺失 / 无量化目标 / 全文无图。
 
-When the user requests changes:
-1. **Mark revisions with strikethrough** — don't delete content immediately
-2. Use ` ~~strikethrough~~ ` for removed lines
-3. For mermaid diagrams, use `%% ~~comment~~` to annotate removed branches
-4. Keep the document syntactically valid while marked
+### 5.2 语义审查（**你按清单逐项执行**）
 
-### Step 4.2: Iterate the PRD
+清单来源 = **合规依据源（按产品形态匹配）+ 领域红线 + 人设方法论**（用 `prd/preset.get` 读相关预设）。逐条核对：
 
-After confirmation, regenerate with `template: "iteration"`:
+- 问题定义是否成立、目标是否**可量化**；
+- 方案是否**可执行、可验收**；
+- 合规红线是否全部覆盖（**红线不受"最小必要"约束**）；
+- 灰度与回滚是否完备；风险披露是否充分。
 
-```json
-{
-  "title": "[PRD title] (v1.1)",
-  "template": "iteration",
-  "version": "1.1",
-  "sections": {
-    "background": "[change rationale]"
-  }
-}
+### 5.3 反馈协议
+
+| 问题类型 | 反馈时机 |
+|---------|---------|
+| 合规红线、事实性错误 | **发现即打断**（讨论阶段就反馈） |
+| 结构 / 清晰度 / 完整性 | **通篇审查后一次性分级反馈** |
+
+产出：`位置 + 级别（P0/P1/P2）+ 修改建议`。**用户确认修改、定稿后**才进入交付。
+
+---
+
+## 6. Phase 5 · 交付
+
+### 6.1 发布确认卡
+
+**定稿后、执行前**呈现一次（默认值全部来自 config，可改可确认）：
+
+```
+发布确认：目标系统 = Confluence（默认）· space = FINT（默认）
+          父页面 = 按标题检索「XX」或指定 · 版本 = v1.0
+          改为本地 Obsidian？回复即可
 ```
 
----
+常规流程**仅此一次**确认，不构成周期性打扰。
 
-## Phase 5: Publish (发布)
+### 6.2 发布
 
-> **Goal:** Deliver the final PRD to the target document system.
+调 `prd/publish({ "title": "…", "content": "<定稿正文>", "version": "1.0" })`。
 
-### Step 5.1: Publish
+- `local_first`（默认）：**先落本地** → 用户 review → 再用用户声明的文档 MCP **同步到在线系统**（工具返回交接指引，**由你去执行**）；
+- 目标为在线系统时，工具返回 `remote_handoff`（目标 + 正文 + 执行指引），你据此调用用户的文档 MCP 创建/更新页面；
+- 目标平台不原生渲染 mermaid 时，先把图经 `prd/diagram.build` 出成图片再嵌入。
 
-Call `prd/publish`:
+### 6.3 收尾
 
-```json
-{
-  "content": "[final PRD markdown]",
-  "title": "[PRD title]",
-  "system": "confluence",    // or "local"
-  "space": "[space key]",    // Confluence only
-  "parent_id": "[page id]",  // for iteration PRDs (child page)
-  "version": "1.0"
-}
-```
-
-### Step 5.2: For Confluence
-
-The publish tool returns prepared HTML and instructions referencing your configured MCP server (e.g., `wiki-mcp`, `feishu-mcp`). Execute them:
-
-1. Call your document MCP server to verify connection
-2. Call your document MCP server to create the page with the HTML body
-3. For iteration PRDs: use `parentId` to create as child page
-
-> **Note:** The MCP server name is set during `prd/workspace.init` via the `doc_mcp_server` parameter. If you didn't set it, run `prd/workspace.config` to update it.
-
-### Step 5.3: Verify
-
-After publishing, verify the page was created correctly:
-- For local: confirm the file exists at the returned path
-- For Confluence: open the page URL to verify rendering
+把落库地址/文件路径回报给用户。
 
 ---
 
-## Best Practices
+## 7. 工具速查（14）
 
-### Discussion Protocol
-
-- **Discuss first, write later** — never skip to writing without user confirmation
-- **Probe, don't prescribe** — ask questions that help the user think, don't give answers
-- **One stage at a time** — complete problem definition before moving to solutions
-- **Summarize after each stage** — confirm understanding before progressing
-
-### Writing Guidelines
-
-- **Scenarios over features** — describe user scenarios, not just feature lists
-- **Flowcharts over text** — use diagrams for processes, tables for comparisons
-- **Error handling included** — every normal flow needs its exception flow
-- **Metrics defined** — every objective needs a measurable success criterion
-
-### Platform Awareness
-
-| Platform | Mermaid rendering | Use |
-|----------|:-----------------:|-----|
-| Obsidian / GitHub MD | ✅ Native | ` ```mermaid ` code block |
-| Confluence | ❌ Not supported | `mermaid_ink_url` as image |
-| Feishu | ❌ Not supported | `mermaid_ink_url` or upload image |
-| Fallback | — | Tell user to screenshot |
-
-### Compliance First
-
-When working in regulated industries (fintech, healthcare, etc.):
-- Compliance red lines apply to ALL experiment groups — never treat as experiment variable
-- Reference domain context for specific regulations
-- When in doubt, escalate to the compliance stage
-
-### Revision Management
-
-- Use strikethrough for mid-discussion changes
-- Only clean up strikethrough when user explicitly says to finalize
-- For iteration PRDs, clearly mark what changed vs what stayed the same
+| 分组 | 工具 | 用途 |
+|------|------|------|
+| 工作区 | `prd/workspace.init` | 初始化/更新配置（可跳过文档系统） |
+| | `prd/workspace.status` | 静默自检（ready/draft/uninitialized） |
+| | `prd/workspace.config` | 改单项配置 |
+| 预设 | `prd/preset.list` | 列六类预设（**只有它知道有哪些选项**） |
+| | `prd/preset.get` | 读单个预设（同名跨类型要带 `type`） |
+| | `prd/preset.validate` | 校验自定义预设 |
+| 调研 | `prd/context.search` | 本地历史文档检索 |
+| 讨论 | `prd/discuss.stages` | 当前阶段集 |
+| | `prd/discuss.probe` | 某阶段探针（合规阶段自动叠加） |
+| | `prd/discuss.save` | 结论落盘 + 进度推进 |
+| 生成 | `prd/diagram.build` | 图表管道（校验/编码/落源） |
+| | `prd/generate` | 模板渲染生成 PRD |
+| 审查 | `prd/review.check` | 确定性检查 |
+| 交付 | `prd/publish` | 本地交付 / 在线交接指引 |
 
 ---
 
-## Pitfalls
+## 8. 常见错误（务必避免）
 
-- ❌ **Don't skip research** — jumping to solutions without reading historical context is the #1 PRD mistake
-- ❌ **Don't converge too early** — let the user explore multiple solutions before picking one
-- ❌ **Don't write while discussing** — keep the conversation focused on thinking, not drafting
-- ❌ **Don't ignore compliance** — always run the compliance stage, even if the requirement seems simple
-- ❌ **Don't assume mermaid renders everywhere** — always provide image fallback for Confluence/Feishu
-- ❌ **Don't publish without review** — always present the generated PRD for user feedback first
-- ✅ **Read the domain context** — it contains regulations, terminology, and industry patterns you won't know otherwise
-- ✅ **Probe before proposing** — let the user's answers guide the solution, not your assumptions
-- ✅ **Confirm after each phase** — get explicit user agreement before moving from discussion to generation, and from generation to publishing
+- ❌ **跳过调研直接谈方案**——PRD 第一大错；
+- ❌ **凭记忆列出预设选项**——必须先 `prd/preset.list`；
+- ❌ **硬塞配置来掩盖问题**——领域没有更贴切的就用 `general`，**不要**塞一个不相关的行业领域；也不要手动把 `status` 改成 active 来掩盖问题；
+- ❌ **讨论不落盘**——每阶段结束必须 `discuss.save`，否则会话一断就丢；
+- ❌ **接受含糊回答**——"都行""看情况"必须追问一轮；
+- ❌ **合规当实验变量 / 事后才提**——红线不受最小必要约束，发现即打断；
+- ❌ **无确认就发 `remote` 图**——内容会外发第三方；
+- ❌ **生成后不审查就发布**——必须先过 `review.check` + 语义清单；
+- ❌ **假设 mermaid 到处能渲染**——Confluence/飞书需转图片；
+- ✅ **讨论先于写作**、**先展示后落库**、**每阶段确认再前进**。

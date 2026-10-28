@@ -4,4 +4,5 @@ dist/
 .env
 .env.local
 prd-config.yaml
-*.mjs
+.prd/
+prd-output/

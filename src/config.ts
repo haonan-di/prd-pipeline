@@ -1,68 +1,51 @@
-/** 配置读写 — prd-config.yaml */
+/**
+ * config 读写（契约 §2）—— 固定在项目根，或由 PRD_PIPELINE_CONFIG 覆盖。
+ * 读取时自动迁移 v1/v2 → v3。
+ */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { parse, stringify } from "yaml";
-import type { WorkspaceConfig } from "./types.js";
+import { migrateToV3, type WorkspaceConfigV3T } from "./contracts/index.js";
 
 const CONFIG_FILENAME = "prd-config.yaml";
 
-/** 获取项目根目录（相对于此脚本的固定位置） */
-function getProjectRoot(): string {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
-  // config.ts 在 src/ 下，项目根在 src/..
-  return join(__dirname, "..");
+export function resolveConfigPath(): string {
+  const env = process.env.PRD_PIPELINE_CONFIG;
+  if (env && env.trim() !== "") return env;
+  return join(process.cwd(), CONFIG_FILENAME);
 }
 
-/** 获取配置文件的固定路径（项目根目录） */
-function getConfigPath(): string {
-  return join(getProjectRoot(), CONFIG_FILENAME);
+export interface LoadedConfig {
+  config: WorkspaceConfigV3T;
+  migrated: boolean;
+  path: string;
 }
 
-/** 创建默认配置 */
-export function createDefaultConfig(): WorkspaceConfig {
-  return {
-    version: 1,
-    workspace: {
-      domain: "",
-      soul: "",
-      template: "standard",
-    },
-    document_system: {
-      type: "local",
-    },
-    search: {
-      recent_spaces: [],
-      recent_keywords: [],
-    },
-  };
+export function readConfig(): LoadedConfig | null {
+  const path = resolveConfigPath();
+  if (!existsSync(path)) return null;
+  const raw = parse(readFileSync(path, "utf-8"));
+  const { config, migrated } = migrateToV3(raw);
+  return { config, migrated, path };
 }
 
-/** 读取配置，不存在则返回 null */
-export function readConfig(): WorkspaceConfig | null {
-  const configPath = getConfigPath();
-  if (!existsSync(configPath)) {
-    return null;
-  }
-  const raw = readFileSync(configPath, "utf-8");
-  return parse(raw) as WorkspaceConfig;
+export function writeConfig(config: WorkspaceConfigV3T): string {
+  const path = resolveConfigPath();
+  const dir = dirname(path);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(path, stringify(config), "utf-8");
+  return path;
 }
 
-/** 写入配置 */
-export function writeConfig(config: WorkspaceConfig): string {
-  const configPath = getConfigPath();
-  const dir = dirname(configPath);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
-  writeFileSync(configPath, stringify(config), "utf-8");
-  return configPath;
-}
+export type WorkspaceStatus = "ready" | "draft" | "uninitialized";
 
-/** 检查是否已初始化 */
-export function isInitialized(): boolean {
-  const config = readConfig();
-  return config !== null && config.workspace.domain !== "";
+/**
+ * 就绪状态只取决于：配置是否存在 + 是否标记为 active。
+ * 领域（domain）等预设是**可选**的，不参与就绪判定（避免"没选领域就永远 draft"）。
+ */
+export function getWorkspaceStatus(): WorkspaceStatus {
+  const loaded = readConfig();
+  if (!loaded) return "uninitialized";
+  return loaded.config.status === "draft" ? "draft" : "ready";
 }
