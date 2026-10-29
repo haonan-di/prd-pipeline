@@ -148,20 +148,29 @@ export function handleDiscussSave(args: Record<string, unknown>) {
     }
 
     // 更新阶段进度
+    // 最后一个阶段保存后 current 记为 "done"——显式终态而不是把字段删掉，
+    // 让「全部讨论完毕」可以被状态判断，而不是靠 completed.length 去猜。
+    // 注意区分两种"没有下一个"：走到阶段集末尾（done）vs 阶段名不在阶段集里（保持原进度）。
     const set = loadStagesSet(config?.workspace.stages || "standard", presetDirs());
-    const idx = set ? set.stages.findIndex((s) => s.id === stage) : -1;
-    const next = set && idx >= 0 ? set.stages[idx + 1]?.id : undefined;
+    const stages = set?.stages ?? [];
+    const idx = stages.findIndex((s) => s.id === stage);
+    const known = idx >= 0;
+    const next = known ? stages[idx + 1]?.id : undefined;
+    const atEnd = known && next === undefined;
     const completed = task.state.stages.completed.includes(stage)
       ? task.state.stages.completed
       : [...task.state.stages.completed, stage];
     const state = {
       ...task.state,
       updated: date,
-      stages: { completed, current: next },
+      stages: {
+        completed,
+        current: atEnd ? "done" : next ?? task.state.stages.current ?? stage,
+      },
     };
     writeState(dir, state);
 
-    return okResult({ file, slug, stage, next_stage: next ?? null, state });
+    return okResult({ file, slug, stage, next_stage: next ?? null, stages_done: atEnd, state });
   } catch (error) {
     if (error instanceof HostPathError) {
       return failResult(

@@ -30,6 +30,10 @@ interface SearchHit {
   path: string;
   snippet: string;
   source: "local";
+  /** 相关性得分，仅用于排序；不跨查询比较 */
+  score: number;
+  /** 命中的位置，让 agent 知道"为什么排在这里" */
+  matched_in: Array<"title" | "path" | "body">;
 }
 
 function collectMdFiles(dir: string, acc: string[] = []): string[] {
@@ -50,31 +54,131 @@ function collectMdFiles(dir: string, acc: string[] = []): string[] {
   return acc;
 }
 
+/**
+ * 相关性权重（C4）。
+ *
+ * 中文没有分词，所以以「整串命中」为主、以「空格分词全命中」为辅：
+ * 整串命中按权重给分，分词命中降档。标题/路径的命中远比正文一次提及重要——
+ * 一份标题就叫「收款台改造」的文档，相关性天然高于正文里顺带提一句的文档。
+ */
+const W_TITLE_PHRASE = 10;
+const W_TITLE_TOKENS = 6;
+const W_PATH_PHRASE = 4;
+const W_PATH_TOKENS = 2;
+const BODY_HIT_CAP = 5; // 正文命中最多计 5 分，避免长文档靠刷词堆分
+
+function splitTokens(query: string): string[] {
+  const seen = new Set<string>();
+  for (const t of query.toLowerCase().split(/\s+/)) {
+    const s = t.trim();
+    if (s !== "") seen.add(s);
+  }
+  return [...seen];
+}
+
+/** 某一行里出现了多少个查询词（用于挑最佳摘要行） */
+function lineHits(line: string, tokens: string[]): number {
+  const low = line.toLowerCase();
+  let n = 0;
+  for (const t of tokens) if (low.includes(t)) n += 1;
+  return n;
+}
+
 function searchLocal(query: string, limit: number, dir: string): SearchHit[] {
   const hits: SearchHit[] = [];
   if (!existsSync(dir)) return hits;
   const needle = query.toLowerCase();
+  const tokens = splitTokens(query);
 
   for (const file of collectMdFiles(dir)) {
-    if (hits.length >= limit) break;
     let content: string;
     try {
       content = readFileSync(file, "utf-8");
     } catch {
       continue;
     }
+    const lowContent = content.toLowerCase();
+
+    // 入选条件：整串命中，或查询词全部出现（AND 而非 OR——只要命一个词就返回会淹掉结果）
+    const phraseInContent = lowContent.includes(needle);
+    const allTokensInContent = tokens.length > 0 && tokens.every((t) => lowContent.includes(t));
+    if (!phraseInContent && !allTokensInContent) continue;
+
     const lines = content.split("\n");
-    const idx = lines.findIndex((l) => l.toLowerCase().includes(needle));
-    if (idx === -1) continue;
-    const titleLine = lines.find((l) => l.startsWith("# "));
-    hits.push({
-      title: titleLine ? titleLine.replace(/^#\s+/, "").trim() : file,
-      path: file,
-      snippet: lines.slice(Math.max(0, idx - 1), idx + 3).join("\n").slice(0, 240),
-      source: "local",
-    });
+    let titleIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith("# ")) {
+        titleIdx = i;
+        break;
+      }
+    }
+    const title = titleIdx >= 0 ? lines[titleIdx].replace(/^#\s+/, "").trim() : file;
+    const lowTitle = title.toLowerCase();
+    const lowPath = file.toLowerCase();
+
+    const matchedIn: SearchHit["matched_in"] = [];
+    let score = 0;
+
+    if (lowTitle.includes(needle)) {
+      score += W_TITLE_PHRASE;
+      matchedIn.push("title");
+    } else if (tokens.length > 0 && tokens.every((t) => lowTitle.includes(t))) {
+      score += W_TITLE_TOKENS;
+      matchedIn.push("title");
+    }
+
+    if (lowPath.includes(needle)) {
+      score += W_PATH_PHRASE;
+      matchedIn.push("path");
+    } else if (tokens.length > 0 && tokens.every((t) => lowPath.includes(t))) {
+      score += W_PATH_TOKENS;
+      matchedIn.push("path");
+    }
+
+    // 正文命中：只看标题行以下，避免标题的命中被重复计分
+    const bodyLines = titleIdx >= 0 ? lines.slice(titleIdx + 1) : lines;
+    const bodyText = bodyLines.join("\n").toLowerCase();
+    let bodyHits = 0;
+    if (phraseInContent) {
+      let from = 0;
+      while (true) {
+        const at = bodyText.indexOf(needle, from);
+        if (at === -1) break;
+        bodyHits += 1;
+        from = at + needle.length;
+        if (bodyHits >= BODY_HIT_CAP) break;
+      }
+    }
+    if (bodyHits > 0) {
+      score += Math.min(bodyHits, BODY_HIT_CAP);
+      matchedIn.push("body");
+    } else if (allTokensInContent && !phraseInContent) {
+      // 整串没出现、但查询词都在正文里：给最低一档分，排在同分文档里靠前
+      score += 1;
+      matchedIn.push("body");
+    }
+
+    // 摘要落在命中最密的那一行，而不是文件里第一次出现的位置
+    let bestLine = 0;
+    let bestHits = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const n = lineHits(lines[i], tokens);
+      if (n > bestHits && n > 0) {
+        bestHits = n;
+        bestLine = i;
+      }
+    }
+    const snippet =
+      bestHits > 0
+        ? lines.slice(Math.max(0, bestLine - 1), bestLine + 2).join("\n").slice(0, 240)
+        : content.slice(0, 240);
+
+    hits.push({ title, path: file, snippet, source: "local", score, matched_in: matchedIn });
   }
-  return hits;
+
+  // 分数降序；同分按路径升序，保证同一份 vault 每次检索顺序一致
+  hits.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return hits.slice(0, limit);
 }
 
 interface RemoteQuery {
@@ -138,7 +242,8 @@ export function handleContextSearch(args: Record<string, unknown>) {
   if (query === "") return failResult("INVALID_INPUT", "缺少查询关键词 query");
 
   const config = readConfig()?.config;
-  const limit = (args.limit as number) ?? 10;
+  const rawLimit = Number(args.limit ?? 10);
+  const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 100) : 10;
   const scope = ((args.scope as string) || "auto") as "local" | "remote" | "auto";
   const ds = config?.document_system;
   const remoteDeclared = ds !== undefined && ds.type !== "local";

@@ -92,6 +92,13 @@ tags: [prd, product-management, documentation, workflow]
 
 调 `prd/context.search`（`{ "query": "关键词" }`）在配置的本地目录检索历史 md。
 
+- 结果**已按相关性排好序**（标题命中 > 路径命中 > 正文多次提及），直接按顺序读前几条即可，不用自己再排；
+- 每条带 `score` 与 `matched_in`，用来判断"为什么排在这里"——`matched_in` 只有 `body` 的，
+  多半是顺带提了一句，别当成强相关；
+- 检索是关键词式的，不是语义检索。拿不到想要的，换个说法（同义词、产品模块名）再查一次，
+  或直接把 `limit` 放大。
+- 多词查询是 **AND**：`"分期 风控"` 只返回两个词都出现的文档。想放宽就分开查两次。
+
 ### 2.2 在线历史（**声明了文档 MCP 时**）
 
 先调 `prd/context.search`（`{ "query": "关键词" }`，`scope` 默认 `auto`），**再执行检索**：
@@ -138,6 +145,8 @@ tags: [prd, product-management, documentation, workflow]
 - **合规阶段**（`probe_ref: compliance`）的探针由工具**运行时叠加**「合规依据源 + 所选领域红线」——你拿到什么就问什么，不要自造合规问题；
 - 合规阶段涉及事实核查（法规红线），**保持开放追问，不要套选择题模板**；
 - 每阶段结束**必须** `prd/discuss.save` 落盘——它是 generate 的输入、审查的依据，也是跨会话续起的状态源。
+- `discuss.save` 返回 `next_stage` 与 `stages_done`：`stages_done: true` 就是阶段集走完了（`state.yaml` 里
+  `stages.current` 记为 `done`）。**以这个标记为准**，不要自己数做了几个阶段——阶段集可能被用户替换成 3 个或 7 个。
 
 ### 3.3 讨论收尾
 

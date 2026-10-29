@@ -172,9 +172,12 @@ npm.cmd run verify:full
 
 落地（2026-10-29）：`generate` 固定写 `prd-v<版本>.md`，`publish` 按 `-<标题>-v<版本>.md` 后缀匹配；两处都返回 `overwritten`。`generate` 覆盖且内容有变化时追加「版本号未递增」告警。回归用例见 `src/__tests__/revisions.test.ts`，契约见 §1.4。
 
-### C2. 全阶段完成后 `state.yaml` 没有 `current` 字段
+### C2. 全阶段完成后 `state.yaml` 没有 `current` 字段 —— **已采纳并实施**
 
 无害，但契约 §1.3 示例里有 `current`，未说明完成后应为何值。建议明确为"完成后省略"或固定为 `"done"`，避免不同实现各写一套。
+
+落地（2026-10-29）：取 `"done"`。末阶段保存后 `stages.current = "done"`，`discuss.save` 同时返回 `stages_done: true`；
+阶段名不在当前阶段集里时不动 `current`、也不判完成（否则一个笔误的 stage 名就能把需求标成"已讨论完"）。
 
 ### C3. `review.check` 的 `passed` 与 `severity` 不自洽 —— **已采纳并实施**
 
@@ -186,6 +189,9 @@ npm.cmd run verify:full
 
 落地（2026-10-29）：`passed = (P0 数 === 0)`，响应新增 `counts: {P0, P1, P2}`。契约 §8.1 补了级别列与阻断规则。
 
-### C4. `context.search` 本地检索是整行子串匹配
+### C4. `context.search` 本地检索是整行子串匹配 —— **已采纳并实施**
 
 中文场景下"失败"会命中所有含该词的文档，相关性排序靠文件遍历顺序。当前可接受（命中数少时够用），但如果 vault 变大，需要加权（标题命中 > 正文命中）与截断策略。列为 M5 之后的候选。
+
+落地（2026-10-29）：入选改为 AND（整串，或空格分词全命中），按标题 10/6、路径 4/2、正文 1（封顶 5）加权，
+同分按路径升序；返回 `score` 与 `matched_in`；摘要取命中密度最高的一行。契约 §4.6，用例 `src/__tests__/c2c4.test.ts`。
