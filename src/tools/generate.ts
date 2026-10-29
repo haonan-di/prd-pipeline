@@ -3,7 +3,8 @@
  * 关键修正：模板占位符与入参键严格对齐（旧实现二者脱节，产物留 {花括号}）。
  */
 
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { readConfig } from "../config.js";
 import { HostPathError } from "../paths.js";
 import { getPresetByName } from "../presets/loader.js";
@@ -15,7 +16,6 @@ import {
   ensureTask,
   writeState,
   taskDir,
-  uniqueFilePath,
 } from "../task.js";
 import { okResult, failResult } from "../envelope.js";
 
@@ -167,9 +167,20 @@ export function handleGenerate(args: Record<string, unknown>) {
     }
 
     // 6. 落盘任务目录（版本历史一并写入）
+    // 同版本视为同一修订：覆盖原文件（与 state.versions 按版本覆盖的语义一致），
+    // 内容有变化时提醒版本号未递增，避免磁盘上留下 -2 副本而状态只有一条。
     const filename = `prd-v${version}.md`;
-    const file = uniqueFilePath(dir, filename);
+    const file = join(dir, filename);
+    const existedBefore = existsSync(file);
+    const previous = existedBefore ? readFileSync(file, "utf-8") : null;
     writeFileSync(file, rendered, "utf-8");
+
+    if (existedBefore) {
+      warnings.push(`版本 v${version} 已存在，已覆盖原文件`);
+      if (previous !== rendered) {
+        warnings.push(`内容与上一版不同但版本号未递增（仍为 v${version}）；如需保留历史请递增版本号`);
+      }
+    }
 
     writeState(dir, {
       ...task.state,
@@ -187,6 +198,7 @@ export function handleGenerate(args: Record<string, unknown>) {
       word_count: rendered.length,
       sections_present: Object.keys(sections),
       diagrams_embedded: diagrams.length,
+      overwritten: existedBefore,
       warnings,
       content: rendered,
     });

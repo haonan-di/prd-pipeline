@@ -35,9 +35,10 @@
 
 ### A4. 边界观察
 
-- 同版本重复 `generate` → 生成 `prd-v1.0-2.md`；
-- 同版本重复 `publish` → 生成 `...-v1.0-2.md`；
-- `state.yaml` 的 `versions` 只有一条（同版本覆盖），与磁盘上的两份文件不一致（见 C1）。
+- 同版本重复 `generate` → 生成 `prd-v1.0-2.md`；`publish` → 生成 `...-v1.0-2.md`；
+- `state.yaml` 的 `versions` 只有一条（同版本覆盖），与磁盘上的两份文件不一致。
+
+→ 已按 C1 修正（2026-10-29）：现在同版本覆盖原文件，不再产生副本。
 
 ### A5. 真实 MCP 客户端接入（用户已验）
 
@@ -163,23 +164,27 @@ npm.cmd run verify:full
 
 ## C. 待决策
 
-### C1. 同版本重复生成/发布会产生 `-2` 副本（重要）
+### C1. 同版本重复生成/发布会产生 `-2` 副本（重要）—— **已采纳并实施**
 
 现状：同版本号再跑一次 `generate` 得到 `prd-v1.0-2.md`，`publish` 得到 `...-v1.0-2.md`；但 `state.yaml` 的 `versions` 按版本号覆盖，只有一条。结果是**磁盘上两份、状态里一份**，用户不知道该信哪个。
 
 建议：同版本视为"同一修订"——覆盖原文件，返回里标 `overwritten: true`；若内容与上次不同，额外告警"版本号未递增"。与 `state.versions` 按版本覆盖的语义保持一致。
 
+落地（2026-10-29）：`generate` 固定写 `prd-v<版本>.md`，`publish` 按 `-<标题>-v<版本>.md` 后缀匹配；两处都返回 `overwritten`。`generate` 覆盖且内容有变化时追加「版本号未递增」告警。回归用例见 `src/__tests__/revisions.test.ts`，契约见 §1.4。
+
 ### C2. 全阶段完成后 `state.yaml` 没有 `current` 字段
 
 无害，但契约 §1.3 示例里有 `current`，未说明完成后应为何值。建议明确为"完成后省略"或固定为 `"done"`，避免不同实现各写一套。
 
-### C3. `review.check` 的 `passed` 与 `severity` 不自洽
+### C3. `review.check` 的 `passed` 与 `severity` 不自洽 —— **已采纳并实施**
 
 发现项本身分了级别（`PLACEHOLDER_UNRESOLVED`/`CHANGELOG_MISSING` 是 P0，`SECTION_EMPTY`/`METRICS_MISSING` 是 P1，`DIAGRAM_MISSING` 是 P2），但 `passed` 的算法是 `findings.length === 0`——只要有一条 P2（例如纯文字需求没画图），整体就判"未通过"。
 
 风险：agent 按 SKILL "必须先过 review.check"执行时，会把纯流程需求卡在审查阶段，或者被迫为凑检查而画一张没意义的图。
 
 建议：`passed` 改为「无 P0 即通过」，P1/P2 作为建议随附；或单独返回 `blocking: boolean`，让编排层自己决定是否卡住。这是行为变更，未擅自改。
+
+落地（2026-10-29）：`passed = (P0 数 === 0)`，响应新增 `counts: {P0, P1, P2}`。契约 §8.1 补了级别列与阻断规则。
 
 ### C4. `context.search` 本地检索是整行子串匹配
 

@@ -3,7 +3,7 @@
  * 不内置任何平台连接器、不存凭证；在线发布由 agent 用用户声明的文档 MCP 执行。
  */
 
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { readConfig } from "../config.js";
 import { uniqueFilePath } from "../task.js";
@@ -26,13 +26,16 @@ export const PUBLISH_TOOL = {
   },
 } as const;
 
-function prdFilename(title: string, version: string): string {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const safe = title
+function safeTitle(title: string): string {
+  return title
     .replace(/[<>:"/\\|?*]/g, "")
     .replace(/\s+/g, "-")
     .slice(0, 50);
-  return `${date}-${safe}-v${version}.md`;
+}
+
+function prdFilename(title: string, version: string): string {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `${date}-${safeTitle(title)}-v${version}.md`;
 }
 
 /** 数一数正文里有多少个 mermaid 代码块——目标平台不原生渲染时需要先出图 */
@@ -135,9 +138,17 @@ export function handlePublish(args: Record<string, unknown>) {
       }
       const dir = join(vault, ds?.local.subdir ?? "PRD");
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      const file = uniqueFilePath(dir, prdFilename(title, version));
+      // 同 (标题, 版本) 视为同一份交付物：命中已有文件就覆盖（跨日期也算），
+      // 避免同一版本反复发布堆出「-2」副本。
+      const suffix = `-${safeTitle(title)}-v${version}.md`;
+      const existing = existsSync(dir)
+        ? readdirSync(dir).find((n) => n.endsWith(suffix))
+        : undefined;
+      const file = existing
+        ? join(dir, existing)
+        : uniqueFilePath(dir, prdFilename(title, version));
       writeFileSync(file, content, "utf-8");
-      out.local = { path: file };
+      out.local = { path: file, overwritten: Boolean(existing) };
     }
 
     // 在线协同交接（不真正发文档，交给 agent 用声明的 MCP 执行）

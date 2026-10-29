@@ -86,5 +86,9 @@ export function handleReviewCheck(args: Record<string, unknown>) {
     });
   }
 
-  return okResult({ findings, passed: findings.length === 0 });
+  /* 只有 P0 阻断；P1/P2 作为改进建议随附，避免纯文字需求被"必须有图"卡住 */
+  const counts = { P0: 0, P1: 0, P2: 0 };
+  for (const f of findings) counts[f.severity] += 1;
+
+  return okResult({ findings, passed: counts.P0 === 0, counts });
 }

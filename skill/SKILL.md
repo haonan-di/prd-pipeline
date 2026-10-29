@@ -197,6 +197,9 @@ tags: [prd, product-management, documentation, workflow]
 
 - `sections` 的键**必须覆盖模板的 required 占位符**（可显式空串），否则报 `PLACEHOLDER_MISSING`；
 - 工具会在渲染后**检出残留占位符**（`PLACEHOLDER_UNRESOLVED`）——有残留就是内容没给全，别硬发。
+- **版本号 = 文件身份**：同版本再生成是覆盖同一个 `prd-v<版本>.md`（响应 `overwritten: true`），不会产生 `-2` 副本。
+  所以改内容就要同时递增 `version`——如果工具告警「版本号未递增」，把它照实告诉用户，由用户决定是否提版本，
+  不要自己悄悄把版本往上推。
 
 ---
 
@@ -205,6 +208,17 @@ tags: [prd, product-management, documentation, workflow]
 ### 5.1 确定性检查
 
 调 `prd/review.check({ "content": "<PRD正文>" })`，拿回问题清单：残留占位符 / 空章节 / 修订记录缺失 / 无量化目标 / 全文无图。
+
+返回里的 `passed` 只反映一件事：**有没有 P0**。P1/P2 是改进建议，会照样列在 `findings` 里，
+但不会把 `passed` 变成 false——纯文字的小需求不该被"必须有图"卡住。
+
+| 级别 | 检查项 | 处理方式 |
+|------|--------|---------|
+| P0 | 残留占位符、修订记录缺失 | 必须修完再交付 |
+| P1 | 空章节、无量化目标 | 建议修；用户明确放弃可跳过，但要在汇报里说一句 |
+| P2 | 全文无图 | 看需求形态：改动小、链路单一可以不画 |
+
+别为了把 `findings` 清空去凑图或凑指标表——凑出来的内容是负资产。
 
 ### 5.2 语义审查（**你按清单逐项执行**）
 
@@ -243,6 +257,9 @@ tags: [prd, product-management, documentation, workflow]
 ### 6.2 发布
 
 调 `prd/publish({ "title": "…", "content": "<定稿正文>", "version": "1.0" })`。
+
+- **同标题同版本 = 同一份交付物**：重复发布会覆盖原文件（响应 `local.overwritten: true`），文件名跨日期也不变；
+  改了内容再发，记得递增 `version`，否则旧版本被静默改写、用户拿不到对比。
 
 - `local_first`（默认）：**先落本地** → 用户 review → 再用用户声明的文档 MCP **同步到在线系统**（工具返回交接单，**由你去执行**）；
 - 目标为在线系统时，工具返回 `remote_handoff`。按它的 `checklist` 顺序执行，其中两条是硬要求：

@@ -107,13 +107,14 @@ describe("预设校验", () => {
 });
 
 describe("确定性审查", () => {
-  it("缺量化目标与无图 → 检出", () => {
+  it("缺量化目标与无图 → 检出但不阻断（仅 P0 阻断）", () => {
     const content = "# T\n\n## PRD 修订记录\n\n| 版本 | 时间 | 修订内容 | 修订人 |\n|---|---|---|---|\n| v1.0 | 2026-10-15 | 初版 | 我 |\n\n## 一、背景\n\n有内容\n";
     const r = parse(handleReviewCheck({ content }));
     const codes = r.data.findings.map((f: any) => f.code);
     expect(codes).toContain("METRICS_MISSING");
     expect(codes).toContain("DIAGRAM_MISSING");
-    expect(r.data.passed).toBe(false);
+    expect(r.data.counts.P0).toBe(0);
+    expect(r.data.passed).toBe(true);
   });
 
   it("残留占位符 → P0", () => {

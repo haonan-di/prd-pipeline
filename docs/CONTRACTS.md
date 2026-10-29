@@ -63,6 +63,16 @@ current_prd_version: "1.0"
 | `remote` | 声明的文档系统 | 工具产出**交接指引**，由 agent 用用户的文档 MCP 执行 |
 | `local_first`（默认） | 先落 local → review → 再 remote | 两段式 |
 
+**同名覆盖规则（C1，M8 起）**：`(标题, 版本)` 唯一确定一份交付物。
+
+- `generate` 落点固定为 `<任务目录>/prd-v<版本>.md`；同版本再次生成即覆盖，不再产生 `prd-v1.0-2.md`
+  之类的副本（副本会让磁盘文件数与 `state.yaml` 的 `versions` 记录对不上）。
+- `publish` 落点按 `-<标题>-v<版本>.md` 后缀匹配已有文件，命中即覆盖，跨日期也算命中；
+  标题或版本变化才产生新文件。
+- 两处响应都带 `overwritten`（`publish` 在 `data.local.overwritten`），便于 agent 判断这次是新建还是覆盖。
+- `generate` 覆盖时若渲染结果与磁盘上原有内容不同，追加告警「版本号未递增」，把"改动没留痕"这件事
+  显式暴露出来——要不要保留历史由用户决定递增版本号，工具不擅自改版本。
+
 ---
 
 ## 2. config v3
@@ -425,13 +435,19 @@ interface Probe {
 
 ### 8.1 确定性检查项（`review.check`，可枚举）
 
-| 检查 | code |
-|------|------|
-| 残留占位符 `{{…}}` | `PLACEHOLDER_UNRESOLVED` |
-| 必备章节为空 | `SECTION_EMPTY` |
-| 修订记录缺失/字段空 | `CHANGELOG_MISSING` |
-| 无量化目标表 | `METRICS_MISSING` |
-| 全文无图 | `DIAGRAM_MISSING` |
+| 检查 | code | 级别 |
+|------|------|------|
+| 残留占位符 `{{…}}` | `PLACEHOLDER_UNRESOLVED` | P0 |
+| 必备章节为空 | `SECTION_EMPTY` | P1 |
+| 修订记录缺失/字段空 | `CHANGELOG_MISSING` | P0 |
+| 无量化目标表 | `METRICS_MISSING` | P1 |
+| 全文无图 | `DIAGRAM_MISSING` | P2 |
+
+**阻断规则（C3，M8 起）**：只有 P0 阻断。`passed = (P0 数 === 0)`，P1/P2 作为改进建议随
+`findings` 一起返回，响应带 `counts: {P0, P1, P2}`。
+
+理由是"必须有图""必须有量化目标"不该拦住一份纯文字的小需求——把它判成不通过，等于逼 agent
+为了过闸去凑图。要收紧时改的是检查项的 severity，不是加规则。
 
 ### 8.2 语义清单拼装（来源）
 
