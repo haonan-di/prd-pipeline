@@ -39,6 +39,10 @@ npm install
 npm run build      # 编译到 dist/
 ```
 
+> **离线 / 涉密环境注意**：图表的 `local` 出图需要两样东西——本机浏览器（Edge / Chrome，自动探测）和 mermaid 渲染脚本。后者**默认从 CDN 加载**：图内容不外发，但渲染需要联网。要完全离线，额外执行 `npm install mermaid`，程序会自动优先用本地包，不再访问网络。
+>
+> 是否具备这两项，`prd/workspace.init` 会在返回里给出 `capabilities.diagram.local_render_ready`，并在 `warnings` 里写明缺哪一样。
+
 ## MCP 客户端配置
 
 server 走 **stdio**。两种入口：
@@ -121,7 +125,7 @@ Cursor 编辑 `~/.cursor/mcp.json`；VS Code 在项目内建 `.vscode/mcp.json`�
 | 讨论 | `prd/discuss.stages` | 返回当前生效的阶段集 |
 | | `prd/discuss.probe` | 某阶段探针（含选项/推荐/理由；合规阶段叠加载入） |
 | | `prd/discuss.save` | 阶段结论落盘 + 进度推进 |
-| 生成 | `prd/diagram.build` | 图表管道（引擎可插拔 + 渲染策略） |
+| 生成 | `prd/diagram.build` | 图表管道：mermaid / drawio 引擎；`source`（零外发）/ `local`（本机无头浏览器渲染，图内容不出机器）/ `remote`（第三方，需确认） |
 | | `prd/generate` | 按模板渲染生成 PRD |
 | 审查 | `prd/review.check` | 确定性检查（占位符/空章节/修订记录/量化目标/图） |
 | 交付 | `prd/publish` | 本地交付 + 结构化交接单（upsert：先按标题查，命中则更新，未命中才建） |

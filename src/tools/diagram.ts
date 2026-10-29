@@ -20,6 +20,10 @@ export const DIAGRAM_BUILD_TOOL = {
       engine: { type: "string", description: "引擎名，默认取 config.diagram.default_engine" },
       strategy: { type: "string", enum: ["source", "local", "remote"] },
       format: { type: "string", enum: ["svg", "img"], default: "svg" },
+      out_dir: {
+        type: "string",
+        description: "local 策略的产物目录；默认写入系统临时目录，建议传任务目录下的 assets/",
+      },
       confirm_remote: {
         type: "boolean",
         description: "config.diagram.render=ask 时，选用 remote 必须显式确认（数据外发）",
@@ -93,7 +97,7 @@ export async function handleDiagramBuild(args: Record<string, unknown>) {
 
     if (strategy === "local" && !engine.strategies.includes("local")) {
       // 引擎不支持 local，降级为 source 并告警
-      const result = await engine.build(code, "source", { format: args.format });
+      const result = await engine.build(code, "source", { format: args.format, out_dir: args.out_dir });
       return okResult({
         ...result,
         warnings: [...(result.warnings ?? []), `引擎 ${engineName} 暂不支持 local，已降级为 source`],
@@ -101,7 +105,7 @@ export async function handleDiagramBuild(args: Record<string, unknown>) {
       });
     }
 
-    const result = await engine.build(code, strategy, { format: args.format });
+    const result = await engine.build(code, strategy, { format: args.format, out_dir: args.out_dir });
     return okResult({ ...result, engine: engineName, policy: config?.diagram.render ?? "ask" });
   } catch (error) {
     return failResult("DIAGRAM_INVALID", `图表构建失败：${String(error)}`);

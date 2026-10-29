@@ -4,6 +4,7 @@
 
 import type { DiagramEngine, EngineDeclT } from "../contracts/index.js";
 import { MermaidEngine } from "./engines/mermaid.js";
+import { DrawioEngine } from "./engines/drawio.js";
 import { DeclarativeEngine } from "./engines/declarative.js";
 
 export class EngineRegistry {
@@ -11,6 +12,7 @@ export class EngineRegistry {
 
   constructor(declarations: EngineDeclT[] = []) {
     this.register(new MermaidEngine());
+    this.register(new DrawioEngine());
     for (const decl of declarations) this.register(new DeclarativeEngine(decl));
   }
 

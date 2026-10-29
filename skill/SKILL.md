@@ -165,9 +165,15 @@ tags: [prd, product-management, documentation, workflow]
 | 方案对比 / 结构 | mindmap | mermaid |
 | 排期 | gantt | mermaid |
 
-调 `prd/diagram.build({ "code": "<mermaid源码>" })`。它返回源码 / 图片 URL（按渲染策略）。**图的落位**不在这里指定——在图嵌入 PRD 时（`prd/generate` 的 `diagrams[].placement`）指定。
+调 `prd/diagram.build({ "code": "<mermaid源码>", "out_dir": "<任务目录>/assets" })`。它返回源码 / 图片 URL / 本地文件路径（按策略）。**图的落位**不在这里指定——在图嵌入 PRD 时（`prd/generate` 的 `diagrams[].placement`）指定。
 
-- **渲染策略**：默认 `source`（只出源码，**零外发**）；目标平台不原生渲染 mermaid 时，需图片才用 `remote`（mermaid.ink，**内容会外发第三方**）——`config.diagram.render=ask` 时**必须先取得用户逐图确认**，再带 `confirm_remote: true` 调用。涉密场景保持 `source`。
+- **渲染策略**：
+  - `source`：只出源码，零外发；目标平台原生渲染 mermaid 时用它。
+  - `local`：**需要图片时优先用它**——本机无头浏览器（Edge/Chrome）渲成 SVG/PNG，图内容不出机器；找不到浏览器或渲染失败会自动降级为 `source` 并在 `warnings` 说明，不要当失败处理。
+  - `remote`：mermaid.ink，**内容会外发第三方**。仅当本机无浏览器且必须出图时使用；`config.diagram.render=ask` 时**必须先取得用户逐图确认**，再带 `confirm_remote: true`。
+- **drawio**：传 `engine: "drawio"`，源码为 `<mxfile>…</mxfile>`。`local` 只生成 `.drawio` 文件（幂等命名），导出 PNG/SVG 需在 drawio 里打开——别向用户承诺服务端出图。
+- 传了 `out_dir` 就落在该目录，随 PRD 归档；不传会落到系统临时目录，重启后可能被清掉。
+- **能力自检**：`workspace.init` 返回的 `capabilities.diagram.local_render_ready` 若为 `false`，按 `warnings` 原样转告用户（缺浏览器 → 让用户指定 `PRD_BROWSER_PATH`；缺 mermaid 包 → 提示 `npm i mermaid` 才能离线渲染），不要自己去装依赖。
 - 图的**美观要求**：统一主题、单图节点数受控（超了就拆子图）、有标题、**连线要有语义（edge label）**。
 
 ### 4.3 生成

@@ -66,6 +66,10 @@
 
 **对 M5 的结论**：`local` 策略可以落地——用无头 Edge/Chrome 渲染 mermaid，内容不外发。drawio 相关能力收窄为「生成可导入的 `.drawio` 文件」（本质是 XML，无需 CLI），本地导出 PNG/SVG 放二期，不阻塞。
 
+**按此结论已落地（M5）**：mermaid 的 `local` 策略用无头浏览器渲染 SVG/PNG（找不到浏览器自动降级为 `source` 并告警）；新增 `drawio` 引擎，`local` 生成幂等的 `.drawio` 文件。可用 `npm.cmd run check:diagram` 在本机验证——有浏览器时真渲染并检查 SVG，没有则明确 SKIP。
+
+**本机实测（2026-10-29）**：Edge 156 被正确探测，mermaid 渲染产出 15,320 字节 SVG；drawio 文件生成、非法 XML 拒绝、`out_dir` 生效均通过。唯一遗留：本机未安装 `mermaid` 包，脚本从 CDN 加载，日志已明确告警「图内容不外发，但渲染需要联网」——离线/涉密环境下需要 `npm i mermaid` 才能渲染。
+
 ---
 
 ## B. 待你执行

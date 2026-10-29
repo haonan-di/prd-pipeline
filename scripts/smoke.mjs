@@ -148,6 +148,38 @@ try {
   assert(diagRemote.ok && diagRemote.data.image_url.startsWith("https://mermaid.ink/"));
   console.log("  ok - diagram.build（remote + 确认）");
 
+  // M5：drawio 引擎（不需要浏览器）
+  const drawioXml = `<mxfile><diagram id="d1" name="流程"><mxGraphModel><root/></mxGraphModel></diagram></mxfile>`;
+  const drawioSrc = await call("prd/diagram.build", { engine: "drawio", code: drawioXml, strategy: "source" });
+  assert(drawioSrc.ok && drawioSrc.data.strategy_used === "source");
+  const drawioLocal = await call("prd/diagram.build", {
+    engine: "drawio",
+    code: drawioXml,
+    strategy: "local",
+    out_dir: join(work, "assets"),
+  });
+  assert(drawioLocal.ok && drawioLocal.data.local_path.endsWith(".drawio"));
+  assert(existsSync(drawioLocal.data.local_path), "drawio 文件应存在");
+  console.log("  ok - diagram.build（drawio source/local）");
+
+  // M5：mermaid local —— 有浏览器则真渲染，无浏览器必须降级而非报错
+  const diagLocal = await call("prd/diagram.build", {
+    code: "graph TD\n  A-->B",
+    strategy: "local",
+    out_dir: join(work, "assets"),
+  });
+  assert(diagLocal.ok, "local 策略不应整体失败");
+  if (diagLocal.data.strategy_used === "local") {
+    assert(existsSync(diagLocal.data.local_path), "本地渲染产物应存在");
+    console.log("  ok - diagram.build（local 真渲染）");
+  } else {
+    assert(
+      diagLocal.data.warnings.some((w) => w.includes("本地渲染失败")),
+      "降级时必须给出原因"
+    );
+    console.log("  ok - diagram.build（local 无浏览器 → 降级 source）");
+  }
+
   const pub = await call("prd/publish", { title: "冒烟需求", content: gen.data.content });
   assert(pub.ok && existsSync(pub.data.local.path));
   console.log("  ok - publish →", pub.data.local.path);

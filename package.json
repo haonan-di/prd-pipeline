@@ -19,6 +19,7 @@
     "verify:full": "node scripts/verify.mjs --full",
     "check:paths": "node scripts/check-paths.mjs",
     "check:presets": "node scripts/check-presets.mjs",
+    "check:diagram": "node scripts/check-diagram.mjs",
     "smoke": "npm run build && node scripts/smoke.mjs"
   },
   "dependencies": {

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { readConfig, writeConfig, getWorkspaceStatus, resolveConfigPath } from "../config.js";
 import { WorkspaceConfigV3, type WorkspaceConfigV3T } from "../contracts/index.js";
 import { discoverPresets, presetDirWarnings } from "../presets/loader.js";
+import { findBrowser, mermaidBundleStatus } from "../diagram/browser.js";
 import { resolveWorkspaceRoot } from "../task.js";
 import { assertHostPath, HostPathError } from "../paths.js";
 import { okResult, failResult } from "../envelope.js";
@@ -160,6 +161,19 @@ export function handleWorkspaceInit(args: Record<string, unknown>) {
       warnings.push(`自定义预设目录 ${w.path}：${w.message}`);
     }
 
+    // 图表能力自检：把"能不能本地出图、要不要联网"在初始化时就说清楚
+    const browser = findBrowser();
+    const mermaid = mermaidBundleStatus();
+    if (!browser) {
+      warnings.push(
+        "未找到可用浏览器（Edge/Chrome）：图表 local 策略会降级为 source。可用 PRD_BROWSER_PATH 指定浏览器路径。"
+      );
+    } else if (!mermaid.available) {
+      warnings.push(
+        "未安装 mermaid 包：local 出图会从 CDN 加载渲染脚本（图内容不外发，但需要联网）。离线或涉密环境请先执行 npm i mermaid。"
+      );
+    }
+
     return okResult({
       status: getWorkspaceStatus(),
       path,
@@ -174,6 +188,13 @@ export function handleWorkspaceInit(args: Record<string, unknown>) {
         diagrams: byType("diagrams"),
       },
       defaults_applied: defaultsApplied,
+      capabilities: {
+        diagram: {
+          browser: browser ? { found: true, kind: browser.kind, path: browser.path } : { found: false },
+          mermaid_bundle: mermaid,
+          local_render_ready: Boolean(browser && mermaid.available),
+        },
+      },
       document_system: {
         type: next.document_system.type,
         mode: next.document_system.mode,

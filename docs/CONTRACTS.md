@@ -310,7 +310,7 @@ engines:
 | 策略 | 外发 | 说明 |
 |------|:----:|------|
 | `source` | 无 | 只返回源码块（目标平台原生渲染） |
-| `local` | 无 | 本地渲染成图（后续 drawio/html 走此路） |
+| `local` | 无 | 本机出图：mermaid 用无头浏览器渲成 SVG/PNG；drawio 生成 `.drawio` 文件 |
 | `remote` | **有** | 第三方渲染服务 |
 | `ask` | 受控 | 用 `remote` 前须逐图确认（**默认**） |
 
@@ -324,6 +324,19 @@ url       = `https://mermaid.ink/svg/${encoded}`
 ```
 
 > 现有实现错在**直接 deflate 源码字符串**（缺 JSON 包装），必然 400。以上为准。
+
+### 5.4 `local` 策略的实现（M5）
+
+**mermaid**：调用本机无头浏览器渲染，图内容不出机器。
+
+- 浏览器查找顺序：`PRD_BROWSER_PATH` 环境变量 → 平台默认安装位置（win32：Edge / Chrome 的 Program Files 四个候选；darwin：`/Applications` 下的 Chrome/Edge/Chromium）→ POSIX 的 `which google-chrome|chromium|microsoft-edge`。
+- mermaid 脚本来源：`PRD_MERMAID_BUNDLE` → 本项目安装的 `mermaid` 包 → CDN。走 CDN 时返回 `warnings` 明确提示「图内容不外发，但渲染需要联网」。
+- 渲染方式：写临时 HTML → `--headless=new --dump-dom --virtual-time-budget=8000` → 从 DOM 中取 `<svg>`；`format: "img"` 时改用 `--screenshot` 输出 PNG。
+- **降级**：找不到浏览器或渲染失败时，`strategy_used` 回落为 `source` 并在 `warnings` 说明原因——不阻断生成流程。
+
+**drawio**：不做服务端渲染。`local` 策略把源码写成 `.drawio` 文件（幂等，同一源码同文件名），并提示导出 PNG/SVG 需在 drawio 中打开。
+
+**产物位置**：`prd/diagram.build` 的 `out_dir` 参数；不传时落到系统临时目录。建议 agent 传 `<任务目录>/assets`，随 PRD 一起归档。
 
 ---
 
