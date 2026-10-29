@@ -30,7 +30,10 @@ export function newestSourceFile(dir: string): NewestSource | null {
     for (const entry of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+        // __tests__ 不参与构建（tsconfig 已排除），改动它不影响 dist
+        if (entry.name === "node_modules" || entry.name === "__tests__" || entry.name.startsWith(".")) {
+          continue;
+        }
         walk(p);
         continue;
       }

@@ -65,6 +65,20 @@ describe("newestSourceFile", () => {
     expect(newestSourceFile(srcDir)?.file).toBe(f);
   });
 
+  it("忽略 __tests__ 目录（不参与构建，改了也不该判 dist 过期）", () => {
+    const tests = join(srcDir, "__tests__");
+    mkdirSync(tests, { recursive: true });
+    const testFile = join(tests, "a.test.ts");
+    writeFileSync(testFile, "x", "utf-8");
+    const mainFile = join(srcDir, "main.ts");
+    writeFileSync(mainFile, "x", "utf-8");
+
+    setAgeSeconds(mainFile, 100);
+    setAgeSeconds(testFile, 0); // 最新的是测试文件
+
+    expect(newestSourceFile(srcDir)?.file).toBe(mainFile);
+  });
+
   it("目录不存在时返回 null", () => {
     expect(newestSourceFile(join(work, "nope"))).toBeNull();
   });

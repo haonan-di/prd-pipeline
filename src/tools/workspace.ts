@@ -34,6 +34,7 @@ export const WORKSPACE_INIT_TOOL = {
       remote_platform: { type: "string", description: "在线平台名（仅提示用）" },
       remote_mcp_server: { type: "string", description: "用户声明的文档 MCP 名" },
       remote_space: { type: "string", description: "在线空间/文件夹" },
+      remote_parent_page_id: { type: "string", description: "在线父页面 ID（新建页面时挂载到此）" },
       workspace_root: { type: "string", description: "工作区根；空=由 agent 按会话项目目录派生" },
       preset_dirs: { type: "array", items: { type: "string" }, description: "自定义预设目录" },
       status: { type: "string", enum: ["active", "draft"] },
@@ -79,6 +80,16 @@ export function handleWorkspaceInit(args: Record<string, unknown>) {
     if (!localArg && !base.document_system.local.vault_path) {
       defaultsApplied.push(`本地交付目录未指定，已使用默认：${resolvedVault}`);
     }
+
+    // 切换文档系统时同步平台名，否则 remote.platform 会一直停在默认值 confluence，
+    // 导致飞书空间也套用 Confluence 的 CQL、交接单报错平台。
+    const docTypeArg = args.doc_system as string | undefined;
+    const platformArg = args.remote_platform as string | undefined;
+    const resolvedPlatform: string =
+      platformArg ??
+      (docTypeArg !== undefined && docTypeArg !== "local" && docTypeArg !== "other"
+        ? docTypeArg
+        : base.document_system.remote.platform);
     const next = WorkspaceConfigV3.parse({
       ...base,
       // 显式调用 init 即视为已初始化。就绪判定不依赖领域（避免"没选领域就永远 draft"）。
@@ -101,9 +112,11 @@ export function handleWorkspaceInit(args: Record<string, unknown>) {
         },
         remote: {
           ...base.document_system.remote,
-          platform: (args.remote_platform as string) ?? base.document_system.remote.platform,
+          platform: resolvedPlatform,
           mcp_server: (args.remote_mcp_server as string) ?? base.document_system.remote.mcp_server,
           space: (args.remote_space as string) ?? base.document_system.remote.space,
+          parent_page_id:
+            (args.remote_parent_page_id as string) ?? base.document_system.remote.parent_page_id,
         },
       },
       workspace_root:
@@ -135,7 +148,10 @@ export function handleWorkspaceInit(args: Record<string, unknown>) {
       next.document_system.type !== "local" &&
       next.document_system.remote.mcp_server === ""
     ) {
-      warnings.push("未声明文档 MCP（remote.mcp_server）：将只能本地交付，无法协同在线发布/调研。");
+      warnings.push("未声明文档 MCP（remote_mcp_server）：将只能本地交付，无法协同在线发布/调研。");
+    }
+    if (next.document_system.type !== "local" && next.document_system.remote.space === "") {
+      warnings.push("未声明在线空间（remote_space）：交接单会把 space 标为未配置，agent 无法定位目标空间。");
     }
     if (next.workspace.domain && !byType("domain").includes(next.workspace.domain)) {
       warnings.push(`领域预设「${next.workspace.domain}」不存在，可用：${byType("domain").join(", ") || "（无）"}`);
@@ -155,6 +171,19 @@ export function handleWorkspaceInit(args: Record<string, unknown>) {
         diagrams: byType("diagrams"),
       },
       defaults_applied: defaultsApplied,
+      document_system: {
+        type: next.document_system.type,
+        mode: next.document_system.mode,
+        local_subdir: next.document_system.local.subdir,
+        remote_platform: next.document_system.remote.platform,
+        remote_space: next.document_system.remote.space,
+        remote_mcp_server: next.document_system.remote.mcp_server,
+        remote_parent_page_id: next.document_system.remote.parent_page_id,
+        ready:
+          next.document_system.type === "local" ||
+          (next.document_system.remote.mcp_server !== "" &&
+            next.document_system.remote.space !== ""),
+      },
       warnings,
     });
   } catch (error) {

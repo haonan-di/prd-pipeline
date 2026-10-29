@@ -106,24 +106,25 @@ Cursor 编辑 `~/.cursor/mcp.json`；VS Code 在项目内建 `.vscode/mcp.json`�
 
 ---
 
-## 工具参考（14）
+## 工具参考（15）
 
 | 分组 | 工具 | 说明 |
 |------|------|------|
-| 工作区 | `prd/workspace.init` | 初始化/更新配置（文档系统可跳过） |
+| 工作区 | `prd/workspace.init` | 初始化/更新配置（声明文档系统：类型 + MCP + space + 父页面；可跳过） |
 | | `prd/workspace.status` | 静默自检：`ready` / `draft` / `uninitialized` |
 | | `prd/workspace.config` | 更新单项配置 |
+| | `prd/domain.detect` | 按需求文本推荐领域预设（带命中关键词与理由） |
 | 预设 | `prd/preset.list` | 列出六类预设（内置 + 自定义，标注来源） |
 | | `prd/preset.get` | 读取单个预设（同名跨类型需带 `type`） |
 | | `prd/preset.validate` | 校验自定义预设结构 |
-| 调研 | `prd/context.search` | 本地历史文档检索 |
+| 调研 | `prd/context.search` | 本地历史检索 + 在线检索计划（`remote_plan`，由 agent 用文档 MCP 执行） |
 | 讨论 | `prd/discuss.stages` | 返回当前生效的阶段集 |
 | | `prd/discuss.probe` | 某阶段探针（含选项/推荐/理由；合规阶段叠加载入） |
 | | `prd/discuss.save` | 阶段结论落盘 + 进度推进 |
 | 生成 | `prd/diagram.build` | 图表管道（引擎可插拔 + 渲染策略） |
 | | `prd/generate` | 按模板渲染生成 PRD |
 | 审查 | `prd/review.check` | 确定性检查（占位符/空章节/修订记录/量化目标/图） |
-| 交付 | `prd/publish` | 本地交付 / 在线交接指引 |
+| 交付 | `prd/publish` | 本地交付 + 结构化交接单（upsert：先按标题查，命中则更新，未命中才建） |
 
 所有工具返回统一信封：成功 `{"ok":true,"data":{…}}`，失败 `{"ok":false,"error":{"code","message","hint"}}`。
 

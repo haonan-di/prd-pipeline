@@ -141,6 +141,31 @@ try {
   assert(pub.ok && existsSync(pub.data.local.path));
   console.log("  ok - publish →", pub.data.local.path);
 
+  // M4：声明在线文档系统 → 检索计划 + upsert 交接单
+  const remoteInit = await call("prd/workspace.init", {
+    doc_system: "confluence",
+    remote_mcp_server: "confluence-mcp",
+    remote_space: "FINT",
+    remote_parent_page_id: "PAGE-1",
+  });
+  assert(remoteInit.data.document_system.ready === true, "声明齐全应 ready");
+  assert(remoteInit.data.document_system.remote_parent_page_id === "PAGE-1");
+  console.log("  ok - workspace.init 声明在线文档系统");
+
+  const ctx = await call("prd/context.search", { query: "冒烟" });
+  assert(Array.isArray(ctx.data.remote_plan.queries), "应有远程检索计划");
+  assert.equal(ctx.data.remote_plan.queries.length, 3);
+  assert(ctx.data.remote_plan.queries[0].cql.includes('space = "FINT"'), "confluence 应给出 CQL");
+  console.log("  ok - context.search 在线检索计划");
+
+  const pubRemote = await call("prd/publish", { title: "冒烟需求", content: gen.data.content });
+  const handoff = pubRemote.data.remote_handoff;
+  assert.equal(handoff.operation, "upsert");
+  assert(handoff.checklist.some((c) => c.includes("命中同名页面")), "应含先查后建步骤");
+  assert(handoff.assets.mermaid_blocks >= 1 && handoff.assets.needs_rendering === true);
+  assert(pubRemote.data.local.path, "local_first 仍应落本地");
+  console.log("  ok - publish 交接单（upsert + 图表计数）");
+
   console.log("\nSMOKE PASS");
 } finally {
   await client.close();

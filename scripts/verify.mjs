@@ -134,7 +134,8 @@ function newestTs(dir) {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = join(d, e.name);
       if (e.isDirectory()) {
-        if (e.name === "node_modules" || e.name.startsWith(".")) continue;
+        // __tests__ 不参与构建，改动它不该被判定为 dist 过期
+        if (e.name === "node_modules" || e.name === "__tests__" || e.name.startsWith(".")) continue;
         walk(p);
       } else if (e.name.endsWith(".ts") && !e.name.endsWith(".d.ts")) {
         const m = statSync(p).mtimeMs;

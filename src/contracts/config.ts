@@ -14,7 +14,8 @@ export const LocalDocConfig = z.object({
 });
 
 export const RemoteDocConfig = z.object({
-  platform: DocSystemType.default("confluence"),
+  // 展示名，自由文本（如 "语雀"、"Confluence Cloud"）；行为判据一律看 DocumentSystemConfig.type
+  platform: z.string().default("confluence"),
   mcp_server: z.string().default(""),
   space: z.string().default(""),
   parent_page_id: z.string().default(""),

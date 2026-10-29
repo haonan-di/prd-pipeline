@@ -85,7 +85,7 @@ document_system:
     vault_path: ""
     subdir: PRD
   remote:                    # 仅协同；不含凭证
-    platform: confluence
+    platform: confluence     # 展示名，自由文本（如「语雀」「Confluence Cloud」）
     mcp_server: ""
     space: ""
     parent_page_id: ""
@@ -104,6 +104,7 @@ search:
 
 - `document_system.type` 为 `local` 时 `local.vault_path` 必填（`init` 校验）。
 - `document_system.type` ≠ `local` 时 `remote.mcp_server` 可为空（未声明 → 仅本地交付，`status` 提示）。
+- **行为判据一律看 `document_system.type`（枚举），`remote.platform` 只是展示名（自由文本）**——例如「要不要生成 CQL」取决于 `type === "confluence"`，与 `platform` 写的是「Confluence Cloud」还是「语雀」无关。
 - `diagram.render` 默认 `ask`。
 - 凭证：**config 不存任何在线平台凭证**（凭证由用户的文档 MCP 持有）。
 
@@ -203,6 +204,51 @@ placeholders:
 - 渲染后若仍匹配 `/{{[#/]?[^}]+}}/` → `PLACEHOLDER_UNRESOLVED`，并报出残留键位置。
 - 该检查同时是 `review.check` 的确定性检查项（§8.1）。
 
+### 4.5 文档协同交接契约（M4）
+
+工具**不联网、不持凭证**。在线调研与在线交付都只产出结构化任务，由 agent 调用用户声明的文档 MCP 执行。
+
+`prd/context.search` 在声明了在线文档系统时返回 `remote_plan`：
+
+```ts
+interface RemotePlan {
+  platform: string;
+  mcp_server: string | null;
+  space: string | null;
+  parent_page_id: string | null;
+  domain: string;
+  queries: { kind: "requirement" | "tech" | "decision"; text: string; purpose: string; cql?: string }[];
+  instructions: string[];
+  generated_at: string;           // YYYY-MM-DD
+  warning?: string;               // 缺 remote_mcp_server 时出现
+}
+```
+
+`prd/publish` 在目标为在线系统时返回 `remote_handoff`：
+
+```ts
+interface RemoteHandoff {
+  platform: string;
+  mcp_server: string | null;
+  space: string | null;
+  parent_page_id: string | null;
+  doc_key: string;                // `${platform}/${space}/${title}`，跨版本稳定
+  operation: "upsert";            // 先按标题查，命中则更新，未命中才新建
+  title: string;
+  version: string;
+  content: string;
+  assets: { mermaid_blocks: number; needs_rendering: boolean; note: string };
+  checklist: string[];            // 有序执行步骤（不含首行概括）
+  instructions: string[];
+  verify: { re_read: true; compare: string[] };
+  warning?: string;               // 缺 mcp_server 时出现
+}
+```
+
+- 语义约定：`upsert` 是硬要求，同一 `doc_key` 不得产生第二份副本；
+- `local_first` 时本地文件与交接单**同时**返回，本地为 review 依据；
+- `assets.mermaid_blocks > 0` 且目标平台不原生渲染时，由 agent 先调 `prd/diagram.build` 出图。
+
 ---
 
 ## 5. 图表引擎契约
@@ -297,17 +343,18 @@ url       = `https://mermaid.ink/svg/${encoded}`
 | `prd/workspace.init` | M1 | 初始化/更新工作区（含声明文档系统） | A1 |
 | `prd/workspace.status` | M1 | 静默自检：`ready/uninitialized/draft` + 绑定信息 | A2 |
 | `prd/workspace.config` | M1 | 更新单项配置 | A3 |
+| `prd/domain.detect` | M2 | 按文本推荐领域预设（命中关键词 + 理由） | A4 |
 | `prd/preset.list` | M1 | 列出六类预设（内置+自定义，标注来源） | B1 |
 | `prd/preset.get` | M1 | 读取单个预设 | B2 |
 | `prd/preset.validate` | M2 | 校验自定义预设 | B3 |
-| `prd/context.search` | M1 | 本地文档搜索 | C1 |
+| `prd/context.search` | M1 | 本地文档搜索 + 在线检索计划（§4.5） | C1 |
 | `prd/discuss.stages` | M2 | 返回阶段集与阶段规划 | D1 |
 | `prd/discuss.probe` | M2 | 返回阶段探针（选项/推荐/理由） | D2 |
 | `prd/discuss.save` | M2 | 阶段结论落盘 | D3 |
 | `prd/diagram.build` | M1 | 图表管道（校验/编码/落源/返回交付物） | E2 |
 | `prd/generate` | M1 | 模板渲染生成 PRD | E1/E3 |
 | `prd/review.check` | M2 | 确定性审查 | F1 |
-| `prd/publish` | M1 | 本地交付 / 远程交接指引 | G1/G2 |
+| `prd/publish` | M1 | 本地交付 / 结构化在线交接单（upsert，§4.5） | G1/G2 |
 
 ---
 

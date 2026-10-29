@@ -36,8 +36,9 @@ tags: [prd, product-management, documentation, workflow]
 逐项问，**能跳过的就允许跳过**：
 
 1. **文档系统**（可跳过）：`local`（只落本地）/ 在线系统（Confluence/飞书/Notion…）。
-   - 选在线时，**只声明、不收集凭证**——问"你用哪个文档 MCP、空间/文件夹是什么"，因为发布和调研都靠它。
-   - 跳过 = 仅本地交付，产品依然可用。
+   - 选在线时，**只声明、不收集凭证**——问三件事：用哪个文档 MCP、空间/文件夹是什么、父页面 ID 有没有。发布和调研都靠这份声明。
+   - 传 `remote_parent_page_id` 后，新建页面会挂在该父页面下；不传则落在空间根下。
+   - 跳过 = 仅本地交付，产品依然可用。init 返回里的 `document_system.ready` 为 `false` 时，说明声明不全（缺 MCP 或 space），按 `warnings` 补齐。
 2. **预设**：调 `prd/preset.list` 把**实际可用**的领域/人设/模板/阶段集列给用户选（**不要凭记忆编造选项**）。
    - **领域（domain）始终有值**：默认 `general`（通用，不绑定行业）。需求**不属于**任何行业时就用 `general`；若属于某行业（金融/医疗/教育…）则选对应领域预设，以加载该行业的监管红线与术语。**不要**因为"不确定"就选一个不相关的行业领域。
    - 人设、模板按需选择；不确定就用默认（`general-pm` / `standard`）。
@@ -52,6 +53,7 @@ tags: [prd, product-management, documentation, workflow]
   "doc_system": "confluence",
   "remote_mcp_server": "用户的文档 MCP 名",
   "remote_space": "FINT",
+  "remote_parent_page_id": "可选：父页面 ID",
   "local_path": "用户的 Obsidian vault 路径",
   "workspace_root": "会话所在项目目录（由你依据当前工作目录决定）"
 }
@@ -92,9 +94,12 @@ tags: [prd, product-management, documentation, workflow]
 
 ### 2.2 在线历史（**声明了文档 MCP 时**）
 
-- 由**你**调用用户声明的文档 MCP 检索**需求文档 + 技术文档 + 历史 PRD**；
-- 检索策略由你产出：给关键词、时间范围、空间范围（Confluence 可用类 CQL：`text ~ "关键词" ORDER BY lastmodified DESC`）；
-- 综合成**带引用**的调研摘要。
+先调 `prd/context.search`（`{ "query": "关键词" }`，`scope` 默认 `auto`），**再执行检索**：
+
+- 返回里的 `remote_plan` 是工具给出的检索计划——平台、space、三条查询（需求 / 技术 / 评审），Confluence 还带 CQL。**按它执行，不要自己另编一套关键词**；
+- 具体检索由**你**调用用户声明的文档 MCP 完成，把结果汇总成**带引用**的摘要：已有什么、变了什么、已知约束与历史决策；
+- MCP 不可用或空间无权限时**如实告知**，不要用本地结果冒充在线调研；
+- 只查本地传 `scope: "local"`；未声明在线系统时读返回里的 `remote_note`。
 
 ### 2.3 外部资料
 
@@ -233,9 +238,12 @@ tags: [prd, product-management, documentation, workflow]
 
 调 `prd/publish({ "title": "…", "content": "<定稿正文>", "version": "1.0" })`。
 
-- `local_first`（默认）：**先落本地** → 用户 review → 再用用户声明的文档 MCP **同步到在线系统**（工具返回交接指引，**由你去执行**）；
-- 目标为在线系统时，工具返回 `remote_handoff`（目标 + 正文 + 执行指引），你据此调用用户的文档 MCP 创建/更新页面；
-- 目标平台不原生渲染 mermaid 时，先把图经 `prd/diagram.build` 出成图片再嵌入。
+- `local_first`（默认）：**先落本地** → 用户 review → 再用用户声明的文档 MCP **同步到在线系统**（工具返回交接单，**由你去执行**）；
+- 目标为在线系统时，工具返回 `remote_handoff`。按它的 `checklist` 顺序执行，其中两条是硬要求：
+  - **upsert（先查后建）**：先在 space 内按标题检索，命中同名页面就更新，未命中才新建——不要把同一份 PRD 反复发成副本；
+  - **写入后回读**：核对标题、版本号、章节数，确认没有截断。
+- `remote_handoff.assets.mermaid_blocks > 0` 且目标平台不原生渲染 mermaid 时，先逐个调 `prd/diagram.build` 出图再嵌入；涉密内容保持 `strategy=source`，不要外发；
+- `remote_handoff.warning` 出现时说明缺 MCP 或 space，先回去补 `workspace.init`，不要硬发。
 
 ### 6.3 收尾
 
@@ -243,24 +251,25 @@ tags: [prd, product-management, documentation, workflow]
 
 ---
 
-## 7. 工具速查（14）
+## 7. 工具速查（15）
 
 | 分组 | 工具 | 用途 |
 |------|------|------|
-| 工作区 | `prd/workspace.init` | 初始化/更新配置（可跳过文档系统） |
+| 工作区 | `prd/workspace.init` | 初始化/更新配置（**声明文档系统**：类型 + MCP + space + 父页面；可跳过） |
 | | `prd/workspace.status` | 静默自检（ready/draft/uninitialized） |
 | | `prd/workspace.config` | 改单项配置 |
+| | `prd/domain.detect` | 按需求文本推荐领域预设（带命中关键词与理由） |
 | 预设 | `prd/preset.list` | 列六类预设（**只有它知道有哪些选项**） |
 | | `prd/preset.get` | 读单个预设（同名跨类型要带 `type`） |
 | | `prd/preset.validate` | 校验自定义预设 |
-| 调研 | `prd/context.search` | 本地历史文档检索 |
+| 调研 | `prd/context.search` | 本地历史检索 + **在线检索计划**（`remote_plan` 交给 agent 执行） |
 | 讨论 | `prd/discuss.stages` | 当前阶段集 |
 | | `prd/discuss.probe` | 某阶段探针（合规阶段自动叠加） |
 | | `prd/discuss.save` | 结论落盘 + 进度推进 |
 | 生成 | `prd/diagram.build` | 图表管道（校验/编码/落源） |
 | | `prd/generate` | 模板渲染生成 PRD |
 | 审查 | `prd/review.check` | 确定性检查 |
-| 交付 | `prd/publish` | 本地交付 / 在线交接指引 |
+| 交付 | `prd/publish` | 本地交付 + **结构化交接单**（upsert，由 agent 用文档 MCP 执行） |
 
 ---
 

@@ -35,6 +35,66 @@ function prdFilename(title: string, version: string): string {
   return `${date}-${safe}-v${version}.md`;
 }
 
+/** 数一数正文里有多少个 mermaid 代码块——目标平台不原生渲染时需要先出图 */
+function countMermaidBlocks(content: string): number {
+  return (content.match(/```mermaid/g) ?? []).length;
+}
+
+/**
+ * 远程交接单：把「发一个页面」拆成 agent 可执行的步骤。
+ * 关键约定是 upsert——先按标题在空间内检索，命中则更新、未命中才新建，
+ * 避免同一份 PRD 反复发布把空间刷成副本。
+ */
+function buildHandoff(
+  title: string,
+  version: string,
+  content: string,
+  ds: { type: string; remote: { platform: string; mcp_server: string; space: string; parent_page_id: string } } | undefined,
+  system: string
+) {
+  const platform = ds?.remote.platform ?? system;
+  const mcp = ds?.remote.mcp_server ?? "";
+  const space = ds?.remote.space ?? "";
+  const parent = ds?.remote.parent_page_id ?? "";
+  const mermaidBlocks = countMermaidBlocks(content);
+
+  const instructions = [
+    `调用用户声明的文档 MCP「${mcp || "(未声明)"}」执行 upsert（先查后建）：`,
+    `- 步骤 1：在 space=${space || "(未配置)"} 中按标题精确检索「${title}」`,
+    "- 步骤 2：命中同名页面 → 更新该页面正文，保留页面 ID 与评论；未命中 → 新建页面",
+    parent ? `- 步骤 3：新建时作为子页面挂到 parent_page_id=${parent}` : "- 步骤 3：新建时放在 space 根下（未配置父页面）",
+    `- 步骤 4：正文使用下方 content；标题=${title}，版本=v${version}`,
+    mermaidBlocks > 0
+      ? `- 步骤 5：正文含 ${mermaidBlocks} 个 mermaid 代码块，若目标平台不原生渲染，先逐个调 prd/diagram.build 出图再替换（涉密内容保持 strategy=source，不要外发）`
+      : "- 步骤 5：正文无 mermaid 代码块，直接写入",
+    "- 步骤 6：写入后回读页面，核对标题、版本号与章节数，确认没有截断",
+  ];
+
+  return {
+    platform,
+    mcp_server: mcp || null,
+    space: space || null,
+    parent_page_id: parent || null,
+    doc_key: `${platform}/${space || "-"}/${title}`,
+    operation: "upsert" as const,
+    title,
+    version,
+    content,
+    assets: {
+      mermaid_blocks: mermaidBlocks,
+      needs_rendering: mermaidBlocks > 0,
+      note:
+        mermaidBlocks > 0
+          ? "目标平台若不渲染 mermaid，需先出图；remote 策略会把内容发给第三方"
+          : "无需处理图表",
+    },
+    checklist: instructions.slice(1).map((line) => line.replace(/^-\s*/, "")),
+    instructions,
+    verify: { re_read: true, compare: ["标题", "版本号", "章节数"] },
+    ...(mcp === "" ? { warning: "未声明 remote_mcp_server：交接单可读，但无法执行" } : {}),
+  };
+}
+
 export function handlePublish(args: Record<string, unknown>) {
   try {
     const title = (args.title as string) ?? "";
@@ -80,26 +140,9 @@ export function handlePublish(args: Record<string, unknown>) {
       out.local = { path: file };
     }
 
-    // 在线协同交接（不真正发文档，交给 agent）
+    // 在线协同交接（不真正发文档，交给 agent 用声明的 MCP 执行）
     if (system !== "local") {
-      const mcp = ds?.remote.mcp_server || "(未声明)";
-      const space = ds?.remote.space || "(未配置)";
-      out.remote_handoff = {
-        platform: ds?.remote.platform ?? system,
-        mcp_server: mcp,
-        space,
-        parent_page_id: ds?.remote.parent_page_id ?? "",
-        content,
-        instructions: [
-          `调用用户声明的文档 MCP「${mcp}」创建/更新页面：`,
-          `- space=${space}`,
-          ds?.remote.parent_page_id
-            ? `- 作为子页面挂到 parent_page_id=${ds.remote.parent_page_id}`
-            : "- 新建页面",
-          `- 标题=${title}`,
-          "- 正文=上述 content；若目标平台不原生渲染 mermaid，先用 prd/diagram.build 出图再嵌入",
-        ],
-      };
+      out.remote_handoff = buildHandoff(title, version, content, ds, system);
     }
 
     out.message =
