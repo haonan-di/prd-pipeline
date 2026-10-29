@@ -154,15 +154,28 @@ version: 1
 ### 3.3 发现 / 覆盖 / 来源标注
 
 - 扫描顺序：内置 `presets/` → `config.preset_dirs`（后者可覆盖前者）。
-- **覆盖键** = `type + name`；同名自定义**覆盖**内置。
-- `preset.list` 返回每项：`{type, name, description, source: "builtin"|"custom", path}`。
+- **覆盖键** = `type + name`；同名自定义**覆盖**内置，且该项 `overrides_builtin: true`（`preset.list.summary.overridden_builtin` 汇总）。
+- 以 `_` 开头的文件（`_template.md`、`_example.md`）是样板，**不参与发现**，可用 `preset.validate` 校验。
+- `preset.list` 返回 `{presets, summary, warnings}`：
+  - 每项 `{type, name, description, source: "builtin"|"custom", path, overrides_builtin}`；
+  - `warnings` 报目录问题（不存在 / 缺六类子目录），不静默跳过。
 - `preset.list` 的可用列表**必须由扫描得出**，禁止硬编码（修正现有缺陷）。
 
 ### 3.4 校验（`preset.validate`）
 
-- frontmatter 必填字段、`type` 枚举、结构化字段形状；
-- 引用完整性：`stages[].probe_ref`、`template.placeholders` 的键唯一性、`diagrams.engines[].strategies` 枚举；
-- 返回具体错误：`{file, field, message}` 列表。
+两种模式：单文件（`path` / `name`+`type`）与整目录批量（`dir`）。
+
+- **结构**：zod schema（必填字段、`type` 枚举、各类型结构化字段）。
+- **一致性**（schema 通过后才跑）：
+  - 目录归属：文件所在子目录必须与 `type` 对应（`domains/` 下放 `type: soul` → 错误）；
+  - 文件名与 `name` 不一致 → 告警；
+  - 正文为空 → 告警；
+  - `template`：正文占位符 ↔ `placeholders` **双向**检查（用而未声明 → 错误；声明而未用 → 告警）；`title/version/date/changelog/author/changelog_table` 为 generate 内置变量，无需声明；
+  - `stages`：至少一阶段、阶段 `id` 唯一、单阶段内探针 `id` 唯一；未知 `probe_ref` → 告警（当前仅支持 `compliance`）；
+  - `diagrams`：至少一引擎、引擎名唯一；声明 `remote` 策略但缺 `options.remote_url` → 错误；
+  - `domain`：长度 < 2 的关键词 → 告警（`domain.detect` 会忽略）。
+- 返回：单文件 `{file, type, valid, errors[], warnings[]}`；批量 `{dir, scanned, valid, files[], errors[], warnings[]}`。
+- 每项问题均为 `{file, field, message}`。
 
 ---
 

@@ -261,7 +261,7 @@ tags: [prd, product-management, documentation, workflow]
 | | `prd/domain.detect` | 按需求文本推荐领域预设（带命中关键词与理由） |
 | 预设 | `prd/preset.list` | 列六类预设（**只有它知道有哪些选项**） |
 | | `prd/preset.get` | 读单个预设（同名跨类型要带 `type`） |
-| | `prd/preset.validate` | 校验自定义预设 |
+| | `prd/preset.validate` | 校验预设（结构 + 目录归属/占位符对齐/重复 id）；传 `dir` 可批量校验自定义目录 |
 | 调研 | `prd/context.search` | 本地历史检索 + **在线检索计划**（`remote_plan` 交给 agent 执行） |
 | 讨论 | `prd/discuss.stages` | 当前阶段集 |
 | | `prd/discuss.probe` | 某阶段探针（合规阶段自动叠加） |

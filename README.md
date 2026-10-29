@@ -168,6 +168,7 @@ npm run smoke    # 构建后跑真实 stdio MCP 全链路
 |------|------|
 | [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md) | **唯一需求源**（定位、取舍、里程碑、验收） |
 | [`docs/CONTRACTS.md`](docs/CONTRACTS.md) | 实现契约（配置/预设/模板/图表/工具 I-O） |
+| [`docs/PRESET-AUTHORING.md`](docs/PRESET-AUTHORING.md) | 自定义预设编写指南（目录结构、覆盖规则、校验与常见报错） |
 | [`skill/SKILL.md`](skill/SKILL.md) | agent 编排说明书 |
 | [`docs/HOW-TO-VERIFY.md`](docs/HOW-TO-VERIFY.md) | 怎么验证 |
 | [`docs/archive/`](docs/archive/) | 历史版本（v2.6 需求文档归档） |

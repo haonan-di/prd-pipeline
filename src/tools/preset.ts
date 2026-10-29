@@ -9,8 +9,10 @@ import {
   findPresetsByName,
   getPresetByName,
   loadPresetFile,
+  presetDirWarnings,
 } from "../presets/loader.js";
-import { Preset, type PresetTypeT } from "../contracts/index.js";
+import { validatePresetFile, validatePresetDir } from "../presets/validate.js";
+import type { PresetTypeT } from "../contracts/index.js";
 import { okResult, failResult } from "../envelope.js";
 
 const TYPE_ENUM = ["domain", "soul", "template", "compliance", "stages", "diagrams"] as const;
@@ -42,13 +44,15 @@ export const PRESET_GET_TOOL = {
 
 export const PRESET_VALIDATE_TOOL = {
   name: "prd/preset.validate",
-  description: "校验预设文件结构（frontmatter 必填项与各类型结构），返回具体错误（file/field/message）。",
+  description:
+    "校验预设：结构（zod schema）+ 一致性（目录归属/文件名/模板占位符/重复 id）。支持单文件或整个自定义目录批量校验。",
   inputSchema: {
     type: "object",
     properties: {
       name: { type: "string", description: "按名查找并校验" },
-      type: { type: "string", enum: TYPE_ENUM as unknown as string[] },
+      type: { type: "string", enum: TYPE_ENUM as unknown as string[], description: "按名查找时限定类型" },
       path: { type: "string", description: "按路径校验（优先于 name）" },
+      dir: { type: "string", description: "批量校验一个自定义预设目录（优先于 path/name）" },
     },
   },
 } as const;
@@ -58,10 +62,21 @@ function presetDirs(): string[] {
 }
 
 export function handlePresetList(args: Record<string, unknown>) {
-  const all = discoverPresets({ presetDirs: presetDirs() });
+  const dirs = presetDirs();
+  const all = discoverPresets({ presetDirs: dirs });
   const type = args.type as string | undefined;
   const presets = type ? all.filter((p) => p.type === type) : all;
-  return okResult({ presets });
+  const warnings = presetDirWarnings(dirs);
+  const overridden = presets.filter((p) => p.overrides_builtin).map((p) => `${p.type}/${p.name}`);
+  return okResult({
+    presets,
+    summary: {
+      total: presets.length,
+      custom: presets.filter((p) => p.source === "custom").length,
+      overridden_builtin: overridden,
+    },
+    warnings,
+  });
 }
 
 export function handlePresetGet(args: Record<string, unknown>) {
@@ -94,6 +109,10 @@ export function handlePresetGet(args: Record<string, unknown>) {
 }
 
 export function handlePresetValidate(args: Record<string, unknown>) {
+  // 批量校验整个自定义目录（社区分享预设时的主入口）
+  const dir = args.dir as string | undefined;
+  if (dir) return okResult(validatePresetDir(dir));
+
   let filePath = args.path as string | undefined;
   const name = args.name as string | undefined;
   const type = args.type as PresetTypeT | undefined;
@@ -103,19 +122,10 @@ export function handlePresetValidate(args: Record<string, unknown>) {
     if (!found) return failResult("PRESET_NOT_FOUND", `预设「${name}」不存在`);
     filePath = found.path;
   }
-  if (!filePath) return failResult("INVALID_INPUT", "需要 name 或 path");
+  if (!filePath) return failResult("INVALID_INPUT", "需要 dir、path 或 name 之一");
 
-  const parsed = loadPresetFile(filePath);
-  if (!parsed) return failResult("PRESET_NOT_FOUND", `文件不存在：${filePath}`);
-
-  const res = Preset.safeParse(parsed.frontmatter);
-  const errors = res.success
-    ? []
-    : res.error.issues.map((i) => ({
-        file: filePath as string,
-        field: i.path.join(".") || "(root)",
-        message: i.message,
-      }));
-
-  return okResult({ file: filePath, valid: res.success, errors });
+  if (!loadPresetFile(filePath)) {
+    return failResult("PRESET_NOT_FOUND", `文件不存在：${filePath}`);
+  }
+  return okResult(validatePresetFile(filePath));
 }

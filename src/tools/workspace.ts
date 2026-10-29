@@ -6,7 +6,7 @@
 import { join } from "node:path";
 import { readConfig, writeConfig, getWorkspaceStatus, resolveConfigPath } from "../config.js";
 import { WorkspaceConfigV3, type WorkspaceConfigV3T } from "../contracts/index.js";
-import { discoverPresets } from "../presets/loader.js";
+import { discoverPresets, presetDirWarnings } from "../presets/loader.js";
 import { resolveWorkspaceRoot } from "../task.js";
 import { assertHostPath, HostPathError } from "../paths.js";
 import { okResult, failResult } from "../envelope.js";
@@ -155,6 +155,9 @@ export function handleWorkspaceInit(args: Record<string, unknown>) {
     }
     if (next.workspace.domain && !byType("domain").includes(next.workspace.domain)) {
       warnings.push(`领域预设「${next.workspace.domain}」不存在，可用：${byType("domain").join(", ") || "（无）"}`);
+    }
+    for (const w of presetDirWarnings(next.preset_dirs)) {
+      warnings.push(`自定义预设目录 ${w.path}：${w.message}`);
     }
 
     return okResult({

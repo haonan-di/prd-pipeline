@@ -72,12 +72,23 @@ try {
   assert(presets.data.presets.some((p) => p.type === "template" && p.name === "standard"));
   assert(presets.data.presets.some((p) => p.type === "domain" && p.name === "general"));
   assert(presets.data.presets.some((p) => p.type === "compliance" && p.name === "c-end-privacy"));
-  console.log("  ok - preset.list（含合规依据源）");
+  assert(presets.data.summary && typeof presets.data.summary.total === "number", "应返回 summary");
+  assert(Array.isArray(presets.data.warnings), "应返回 warnings");
+  console.log("  ok - preset.list（含合规依据源 + summary/warnings）");
 
   assert.equal((await call("prd/preset.validate", { name: "standard", type: "template" })).data.valid, true);
   const ambiguous = await call("prd/preset.get", { name: "standard" });
   assert.equal(ambiguous.ok, false, "同名跨类型应提示指定 type");
   console.log("  ok - preset.validate + 同名歧义处理");
+
+  // M3：六类 _template 样板必须自洽（目录归属 / 占位符对齐 / id 唯一）
+  const presetsDir = join(__dirname, "..", "presets");
+  const templateDirs = ["domains", "souls", "templates", "compliance", "stages", "diagrams"];
+  for (const sub of templateDirs) {
+    const res = await call("prd/preset.validate", { path: join(presetsDir, sub, "_template.md") });
+    assert(res.data.valid, `${sub}/_template.md 校验失败：${JSON.stringify(res.data.errors)}`);
+  }
+  console.log("  ok - 六类 _template.md 自校验通过");
 
   const stages = await call("prd/discuss.stages", {});
   assert(stages.data.stages.map((s) => s.id).join(",").includes("compliance"));

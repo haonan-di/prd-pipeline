@@ -98,6 +98,8 @@ export const PresetListItem = z.object({
   description: z.string().default(""),
   source: z.enum(["builtin", "custom"]),
   path: z.string(),
+  /** 自定义预设覆盖了同名内置预设时为 true，提醒用户内置那份已不生效 */
+  overrides_builtin: z.boolean().default(false),
 });
 
 export const PresetListResult = z.object({

@@ -52,6 +52,30 @@ export interface DiscoverOptions {
   type?: PresetTypeT;
 }
 
+export interface ScanWarning {
+  path: string;
+  message: string;
+}
+
+/** 检查自定义预设目录本身是否可用（不存在 / 没有六类子目录） */
+export function presetDirWarnings(dirs: string[]): ScanWarning[] {
+  const out: ScanWarning[] = [];
+  for (const d of dirs) {
+    if (!existsSync(d)) {
+      out.push({ path: d, message: "自定义预设目录不存在，已跳过" });
+      continue;
+    }
+    const hasTypeDir = Object.values(TYPE_DIR).some((sub) => existsSync(join(d, sub)));
+    if (!hasTypeDir) {
+      out.push({
+        path: d,
+        message: `目录下没有六类子目录（${Object.values(TYPE_DIR).join(" / ")}），扫不到任何预设`,
+      });
+    }
+  }
+  return out;
+}
+
 /** 扫描内置 + 自定义，返回可选项（自定义覆盖内置，保留插入顺序） */
 export function discoverPresets(opts: DiscoverOptions = {}): PresetListItemT[] {
   const roots: { root: string; source: "builtin" | "custom" }[] = [
@@ -60,6 +84,7 @@ export function discoverPresets(opts: DiscoverOptions = {}): PresetListItemT[] {
   ];
 
   const map = new Map<string, PresetListItemT>();
+  const builtinKeys = new Set<string>();
   const types = Object.keys(TYPE_DIR) as PresetTypeT[];
 
   for (const { root, source } of roots) {
@@ -73,12 +98,14 @@ export function discoverPresets(opts: DiscoverOptions = {}): PresetListItemT[] {
         const { frontmatter } = parseFrontmatter(readFileSync(path, "utf-8"));
         const name = (frontmatter.name as string) || basename(f, ".md");
         const key = `${type}/${name}`;
+        if (source === "builtin") builtinKeys.add(key);
         map.set(key, {
           type,
           name,
           description: (frontmatter.description as string) ?? "",
           source,
           path,
+          overrides_builtin: source === "custom" && builtinKeys.has(key),
         });
       }
     }
