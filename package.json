@@ -17,6 +17,8 @@
     "test:watch": "vitest",
     "verify": "node scripts/verify.mjs",
     "verify:full": "node scripts/verify.mjs --full",
+    "check:paths": "node scripts/check-paths.mjs",
+    "check:presets": "node scripts/check-presets.mjs",
     "smoke": "npm run build && node scripts/smoke.mjs"
   },
   "dependencies": {
